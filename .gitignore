@@ -48,6 +48,12 @@ po/*~
 # RStudio Connect folder
 rsconnect/
 
+# claude
+CLAUDE.md
 
 # FOLDERS
 1. ignore/
+
+
+# Large data files
+01_data/EinheitenSolar_all.parquet

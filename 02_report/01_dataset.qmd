@@ -1,0 +1,893 @@
+---
+title: 'Dataset'
+format: html
+---
+
+
+> Here I want to show the dataset and how to create it.
+
+# 1. dataset
+> Dataset to use for the analysis.
+
+Dataset:
+
+```{r}
+
+data <- open_dataset(here("01_data", "EinheitenSolar_all.parquet"))
+
+
+# Step 1: rename German → English (explicit mapping, column order differs from old dataset)
+data <- data |>
+  rename(
+    UnitMastrNumber                          = EinheitMastrNummer,
+    DateLastUpdate                           = DatumLetzteAktualisierung,
+    LocationMastrNumber                      = LokationMaStRNummer,
+    GridOperatorVerificationStatus           = NetzbetreiberpruefungStatus,
+    GridOperatorVerificationDate             = NetzbetreiberpruefungDatum,
+    PlantOperatorMastrNumber                 = AnlagenbetreiberMastrNummer,
+    Country                                  = Land,
+    FederalState                             = Bundesland,
+    District                                 = Landkreis,
+    Municipality                             = Gemeinde,
+    MunicipalityCode                         = Gemeindeschluessel,
+    PostalCode                               = Postleitzahl,
+    City                                     = Ort,
+    RegistrationDate                         = Registrierungsdatum,
+    CommissioningDate                        = Inbetriebnahmedatum,
+    UnitSystemStatus                         = EinheitSystemstatus,
+    UnitOperationalStatus                    = EinheitBetriebsstatus,
+    NotPresentInMigratedUnits                = NichtVorhandenInMigriertenEinheiten,
+    PowerGenerationUnitName                  = NameStromerzeugungseinheit,
+    Weic_NotAvailable                        = Weic_nv,
+    PowerPlantNumber_NotAvailable            = Kraftwerksnummer_nv,
+    EnergySource                             = Energietraeger,
+    GrossCapacity                            = Bruttoleistung,
+    NetNominalCapacity                       = Nettonennleistung,
+    RemoteControllabilityGridOperator        = FernsteuerbarkeitNb,
+    FeedInType                               = Einspeisungsart,
+    AssignedActivePowerInverter              = ZugeordneteWirkleistungWechselrichter,
+    NumberOfModules                          = AnzahlModule,
+    TypeOfSolarSystem                        = ArtDerSolaranlage,
+    PowerLimitation                          = Leistungsbegrenzung,
+    UniformOrientationAndTiltAngle           = EinheitlicheAusrichtungUndNeigungswinkel,
+    MainOrientation                          = Hauptausrichtung,
+    MainOrientationTiltAngle                 = HauptausrichtungNeigungswinkel,
+    UsageArea                                = Nutzungsbereich,
+    EegMastrNumber                           = EegMaStRNummer,
+    StorageAtSameLocation                    = SpeicherAmGleichenOrt,
+    SecondaryOrientation                     = Nebenausrichtung,
+    SecondaryOrientationTiltAngle            = NebenausrichtungNeigungswinkel,
+    Street                                   = Strasse,
+    StreetNotFound                           = StrasseNichtGefunden,
+    HouseNumber_NotAvailable                 = Hausnummer_nv,
+    HouseNumberNotFound                      = HausnummerNichtGefunden,
+    Longitude                                = Laengengrad,
+    Latitude                                 = Breitengrad,
+    DateStartTemporaryDecommissioning        = DatumBeginnVoruebergehendeStilllegung,
+    HouseNumber                              = Hausnummer,
+    AddressAddition                          = Adresszusatz,
+    RemoteControllabilityDirectMarketer      = FernsteuerbarkeitDv,
+    PreviousPlantOperatorMastrNumber         = AltAnlagenbetreiberMastrNummer,  # new variable
+    DateOfOperatorChange                     = DatumDesBetreiberwechsels,
+    DateRegistrationOfOperatorChange         = DatumRegistrierungDesBetreiberwechsels,
+    CadastralDistrict                        = Gemarkung,
+    FieldParcelNumbers                       = FlurFlurstuecknummern,
+    ConnectionToExtraHighOrHighVoltage       = AnschlussAnHoechstOderHochSpannung,
+    DatePermanentDecommissioning             = DatumEndgueltigeStilllegung,
+    SizeOfUsedAreaInHectares                 = GroesseDerInAnspruchGenommenenFlaecheInHektar,
+    PreviousUsageTypeOfArea                  = VorherigerNutzungsartenbereichDerFlaeche,
+    PredominantUsageTypeBeforeSolarConstruction = UeberwiegendeNutzungsartDerFlaecheVorErrichtung,
+    NameOfSolarPark                          = NameDesSolarparks,
+    AdditionalFeaturesOfAreaAndCurrentUsage  = ZusaetzlicheMerkmaleDerFlaecheUndDerAktuellenFlaechennutzung,
+    GenMastrNumber                           = GenMastrNummer,
+    CommissioningDateAtCurrentLocation       = InbetriebnahmedatumAmAktuellenStandort,
+    DispatchResponsible                      = Einsatzverantwortlicher,
+    CitizenEnergy                            = Buergerenergie,
+    DateResumptionOfOperation                = DatumWiederaufnahmeBetrieb,
+    PlannedCommissioningDate                 = GeplantesInbetriebnahmedatum,
+    ClearanceHeight                          = LichteHoehe,
+    PowerPlantNumber                         = Kraftwerksnummer
+  )
+
+# Step 2: convert numeric columns (XML parsing stores everything as character)
+data <- data |>
+  mutate(
+    TypeOfSolarSystem           = as.integer(TypeOfSolarSystem),
+    Country                     = as.integer(Country),
+    FederalState                = as.integer(FederalState),
+    GrossCapacity               = as.numeric(GrossCapacity),
+    NetNominalCapacity          = as.numeric(NetNominalCapacity),
+    AssignedActivePowerInverter = as.numeric(AssignedActivePowerInverter),
+    NumberOfModules             = as.integer(NumberOfModules)
+  )
+
+# Step 3: lookup tables
+C1 <- data.frame(
+  TypeOfSolarSystem.names = c(
+    "Structural_facilities", "Other_Structural_facilities", "Open_space",
+    "Bodies_water", "Large_parking_lot", "Plug_in_sola_system", "Onshore&Offshore_wind_power"
+  ),
+  TypeOfSolarSystem = as.integer(c(853, 2484, 852, 3002, 3058, 2961, NA))
+)
+
+C2 <- tibble(
+  Country = as.integer(c(84, 231, 90, 66, 198, 206, 106)),
+  Country.sn = c("Germany", "Switzerland", "Denmark", "Belgium", "Netherlands", "Austria", "France")
+)
+
+C3 <- data.frame(
+  FederalState = as.integer(c(
+    1409, 1402, 1400, 1403, 1412, 1408, 1410, 1407,
+    1414, 1411, 1413, 1405, 1415, 1406, 1401, 1404
+  )),
+  FederalState.names = c(
+    "North Rhine-Westphalia", "Baden-Württemberg", "Brandenburg", "Bavaria",
+    "Saarland", "Lower Saxony", "Rhineland-Palatinate", "Mecklenburg-Western Pomerania",
+    "Saxony-Anhalt", "Schleswig-Holstein", "Saxony", "Hesse",
+    "Thuringia", "Hamburg", "Berlin", "Bremen"
+  ),
+  FederalStateCode = c(
+    "DEA", "DE1", "DE4", "DE2",
+    "DEC", "DE9", "DEB", "DEM",
+    "DEE", "DEF", "DED", "DE7",
+    "DEG", "DE6", "DE3", "DE5"
+  )
+)
+
+# district code from map (no geometry needed)
+districts_map <- st_read_parquet(here("1. ignore", "3. data", "2. maps", "districts.parquet")) |>
+  st_drop_geometry() |>
+  select(District, DistrictCode)
+
+# Step 4: join lookups
+data <- data |>
+  left_join(C1, by = "TypeOfSolarSystem") |>
+  relocate(TypeOfSolarSystem.names, .after = TypeOfSolarSystem) |>
+  left_join(C2, by = "Country") |>
+  relocate(Country.sn, .after = Country) |>
+  left_join(C3, by = "FederalState") |>
+  relocate(FederalState.names, .after = FederalState) |>
+  relocate(FederalStateCode, .after = FederalState.names) |>
+  left_join(districts_map, by = "District") |>
+  relocate(DistrictCode, .after = District)
+
+# Step 5: solar_category
+reform_date <- as.Date("2024-05-16")
+
+data <- data |>
+  mutate(
+    RegistrationDate  = as.Date(RegistrationDate),
+    CommissioningDate = as.Date(CommissioningDate),
+    solar_category = case_when(
+      TypeOfSolarSystem == 2961 & RegistrationDate <  reform_date & AssignedActivePowerInverter <= 0.6 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 & RegistrationDate >= reform_date & AssignedActivePowerInverter <= 0.8 & GrossCapacity <= 2.0 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 ~ "Plug_in_sola_system - Non-Balcony",
+      TRUE ~ TypeOfSolarSystem.names
+    )
+  )
+
+# Step 6: filter Germany
+data <- data |>
+  filter(Country.sn == "Germany")
+
+# Step 7: date variables (week, month, quarter, year)
+data <- data |>
+  mutate(
+    date.registration.day     = RegistrationDate,
+    date.registration.week    = floor_date(RegistrationDate,  "week"),
+    date.registration.month   = floor_date(RegistrationDate,  "month"),
+    date.registration.quarter = floor_date(RegistrationDate,  "quarter"),
+    date.registration.year    = floor_date(RegistrationDate,  "year"),
+    date.commission.day       = CommissioningDate,
+    date.commission.week      = floor_date(CommissioningDate, "week"),
+    date.commission.month     = floor_date(CommissioningDate, "month"),
+    date.commission.quarter   = floor_date(CommissioningDate, "quarter"),
+    date.commission.year      = floor_date(CommissioningDate, "year")
+  )
+
+# Step 8: fix MunicipalityCode
+data <- data |>
+  mutate(MunicipalityCode = str_pad(as.character(MunicipalityCode), 8, pad = "0"))
+
+data
+```
+
+
+# 2. Dataset 2025-2026 (RegistrationDate)
+> Here I want to show the code to create the final dataset (and using RegistrationDate to filter only for the years 2025 and 2026). Also, I want to add the day date variable (not only week, month, etc.). So the idea is to create a dataset where for eaach geographic level (Germany, Federal State, District, Municipality, Postal Code) and for each date variable (day, week, month, quarter, year) I have the number of PVs registered in each period. For example, if I select Municipality level and month date variable, I want to have a dataset with the number of PVs registered in each month for each municipality. I want to do this for all the combinations of geographic level and date variable.
+
+
+```{r}
+data <- open_dataset(here("01_data", "EinheitenSolar_all.parquet"))
+
+
+# Step 1: rename German → English (explicit mapping, column order differs from old dataset)
+data <- data |>
+  rename(
+    UnitMastrNumber                          = EinheitMastrNummer,
+    DateLastUpdate                           = DatumLetzteAktualisierung,
+    LocationMastrNumber                      = LokationMaStRNummer,
+    GridOperatorVerificationStatus           = NetzbetreiberpruefungStatus,
+    GridOperatorVerificationDate             = NetzbetreiberpruefungDatum,
+    PlantOperatorMastrNumber                 = AnlagenbetreiberMastrNummer,
+    Country                                  = Land,
+    FederalState                             = Bundesland,
+    District                                 = Landkreis,
+    Municipality                             = Gemeinde,
+    MunicipalityCode                         = Gemeindeschluessel,
+    PostalCode                               = Postleitzahl,
+    City                                     = Ort,
+    RegistrationDate                         = Registrierungsdatum,
+    CommissioningDate                        = Inbetriebnahmedatum,
+    UnitSystemStatus                         = EinheitSystemstatus,
+    UnitOperationalStatus                    = EinheitBetriebsstatus,
+    NotPresentInMigratedUnits                = NichtVorhandenInMigriertenEinheiten,
+    PowerGenerationUnitName                  = NameStromerzeugungseinheit,
+    Weic_NotAvailable                        = Weic_nv,
+    PowerPlantNumber_NotAvailable            = Kraftwerksnummer_nv,
+    EnergySource                             = Energietraeger,
+    GrossCapacity                            = Bruttoleistung,
+    NetNominalCapacity                       = Nettonennleistung,
+    RemoteControllabilityGridOperator        = FernsteuerbarkeitNb,
+    FeedInType                               = Einspeisungsart,
+    AssignedActivePowerInverter              = ZugeordneteWirkleistungWechselrichter,
+    NumberOfModules                          = AnzahlModule,
+    TypeOfSolarSystem                        = ArtDerSolaranlage,
+    PowerLimitation                          = Leistungsbegrenzung,
+    UniformOrientationAndTiltAngle           = EinheitlicheAusrichtungUndNeigungswinkel,
+    MainOrientation                          = Hauptausrichtung,
+    MainOrientationTiltAngle                 = HauptausrichtungNeigungswinkel,
+    UsageArea                                = Nutzungsbereich,
+    EegMastrNumber                           = EegMaStRNummer,
+    StorageAtSameLocation                    = SpeicherAmGleichenOrt,
+    SecondaryOrientation                     = Nebenausrichtung,
+    SecondaryOrientationTiltAngle            = NebenausrichtungNeigungswinkel,
+    Street                                   = Strasse,
+    StreetNotFound                           = StrasseNichtGefunden,
+    HouseNumber_NotAvailable                 = Hausnummer_nv,
+    HouseNumberNotFound                      = HausnummerNichtGefunden,
+    Longitude                                = Laengengrad,
+    Latitude                                 = Breitengrad,
+    DateStartTemporaryDecommissioning        = DatumBeginnVoruebergehendeStilllegung,
+    HouseNumber                              = Hausnummer,
+    AddressAddition                          = Adresszusatz,
+    RemoteControllabilityDirectMarketer      = FernsteuerbarkeitDv,
+    PreviousPlantOperatorMastrNumber         = AltAnlagenbetreiberMastrNummer,  # new variable
+    DateOfOperatorChange                     = DatumDesBetreiberwechsels,
+    DateRegistrationOfOperatorChange         = DatumRegistrierungDesBetreiberwechsels,
+    CadastralDistrict                        = Gemarkung,
+    FieldParcelNumbers                       = FlurFlurstuecknummern,
+    ConnectionToExtraHighOrHighVoltage       = AnschlussAnHoechstOderHochSpannung,
+    DatePermanentDecommissioning             = DatumEndgueltigeStilllegung,
+    SizeOfUsedAreaInHectares                 = GroesseDerInAnspruchGenommenenFlaecheInHektar,
+    PreviousUsageTypeOfArea                  = VorherigerNutzungsartenbereichDerFlaeche,
+    PredominantUsageTypeBeforeSolarConstruction = UeberwiegendeNutzungsartDerFlaecheVorErrichtung,
+    NameOfSolarPark                          = NameDesSolarparks,
+    AdditionalFeaturesOfAreaAndCurrentUsage  = ZusaetzlicheMerkmaleDerFlaecheUndDerAktuellenFlaechennutzung,
+    GenMastrNumber                           = GenMastrNummer,
+    CommissioningDateAtCurrentLocation       = InbetriebnahmedatumAmAktuellenStandort,
+    DispatchResponsible                      = Einsatzverantwortlicher,
+    CitizenEnergy                            = Buergerenergie,
+    DateResumptionOfOperation                = DatumWiederaufnahmeBetrieb,
+    PlannedCommissioningDate                 = GeplantesInbetriebnahmedatum,
+    ClearanceHeight                          = LichteHoehe,
+    PowerPlantNumber                         = Kraftwerksnummer
+  )
+
+# Step 2: convert numeric columns (XML parsing stores everything as character)
+data <- data |>
+  mutate(
+    TypeOfSolarSystem           = as.integer(TypeOfSolarSystem),
+    Country                     = as.integer(Country),
+    FederalState                = as.integer(FederalState),
+    GrossCapacity               = as.numeric(GrossCapacity),
+    NetNominalCapacity          = as.numeric(NetNominalCapacity),
+    AssignedActivePowerInverter = as.numeric(AssignedActivePowerInverter),
+    NumberOfModules             = as.integer(NumberOfModules)
+  )
+
+# Step 3: lookup tables
+C1 <- data.frame(
+  TypeOfSolarSystem.names = c(
+    "Structural_facilities", "Other_Structural_facilities", "Open_space",
+    "Bodies_water", "Large_parking_lot", "Plug_in_sola_system", "Onshore&Offshore_wind_power"
+  ),
+  TypeOfSolarSystem = as.integer(c(853, 2484, 852, 3002, 3058, 2961, NA))
+)
+
+C2 <- tibble(
+  Country = as.integer(c(84, 231, 90, 66, 198, 206, 106)),
+  Country.sn = c("Germany", "Switzerland", "Denmark", "Belgium", "Netherlands", "Austria", "France")
+)
+
+C3 <- data.frame(
+  FederalState = as.integer(c(
+    1409, 1402, 1400, 1403, 1412, 1408, 1410, 1407,
+    1414, 1411, 1413, 1405, 1415, 1406, 1401, 1404
+  )),
+  FederalState.names = c(
+    "North Rhine-Westphalia", "Baden-Württemberg", "Brandenburg", "Bavaria",
+    "Saarland", "Lower Saxony", "Rhineland-Palatinate", "Mecklenburg-Western Pomerania",
+    "Saxony-Anhalt", "Schleswig-Holstein", "Saxony", "Hesse",
+    "Thuringia", "Hamburg", "Berlin", "Bremen"
+  ),
+  FederalStateCode = c(
+    "DEA", "DE1", "DE4", "DE2",
+    "DEC", "DE9", "DEB", "DEM",
+    "DEE", "DEF", "DED", "DE7",
+    "DEG", "DE6", "DE3", "DE5"
+  )
+)
+
+# district code from map (no geometry needed)
+districts_map <- st_read_parquet(here("1. ignore", "3. data", "2. maps", "districts.parquet")) |>
+  st_drop_geometry() |>
+  select(District, DistrictCode)
+
+# Step 4: join lookups
+data <- data |>
+  left_join(C1, by = "TypeOfSolarSystem") |>
+  relocate(TypeOfSolarSystem.names, .after = TypeOfSolarSystem) |>
+  left_join(C2, by = "Country") |>
+  relocate(Country.sn, .after = Country) |>
+  left_join(C3, by = "FederalState") |>
+  relocate(FederalState.names, .after = FederalState) |>
+  relocate(FederalStateCode, .after = FederalState.names) |>
+  left_join(districts_map, by = "District") |>
+  relocate(DistrictCode, .after = District)
+
+# Step 5: solar_category
+reform_date <- as.Date("2024-05-16")
+
+data <- data |>
+  mutate(
+    RegistrationDate  = as.Date(RegistrationDate),
+    CommissioningDate = as.Date(CommissioningDate),
+    solar_category = case_when(
+      TypeOfSolarSystem == 2961 & RegistrationDate <  reform_date & AssignedActivePowerInverter <= 0.6 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 & RegistrationDate >= reform_date & AssignedActivePowerInverter <= 0.8 & GrossCapacity <= 2.0 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 ~ "Plug_in_sola_system - Non-Balcony",
+      TRUE ~ TypeOfSolarSystem.names
+    )
+  )
+
+# Step 6: filter Germany
+data <- data |>
+  filter(Country.sn == "Germany")
+
+# Step 7: date variables (week, month, quarter, year)
+data <- data |>
+  mutate(
+    date.registration.day     = RegistrationDate,
+    date.registration.week    = floor_date(RegistrationDate,  "week"),
+    date.registration.month   = floor_date(RegistrationDate,  "month"),
+    date.registration.quarter = floor_date(RegistrationDate,  "quarter"),
+    date.registration.year    = floor_date(RegistrationDate,  "year"),
+    date.commission.day       = CommissioningDate,
+    date.commission.week      = floor_date(CommissioningDate, "week"),
+    date.commission.month     = floor_date(CommissioningDate, "month"),
+    date.commission.quarter   = floor_date(CommissioningDate, "quarter"),
+    date.commission.year      = floor_date(CommissioningDate, "year")
+  )
+
+# Step 8: fix MunicipalityCode
+data <- data |>
+  mutate(MunicipalityCode = str_pad(as.character(MunicipalityCode), 8, pad = "0"))
+
+
+# Add filter for 2025 and 2026
+data <- data |>
+  filter(RegistrationDate >= as.Date("2025-01-01"),
+         RegistrationDate <= as.Date("2026-12-31"),
+         is.na(CommissioningDate) | (CommissioningDate >= as.Date("2025-01-01") & CommissioningDate <= as.Date("2026-12-31")))
+
+```
+
+
+check:
+
+```{r}
+# districts in data with no match in map (DistrictCode is NA)
+data |>
+  filter(is.na(DistrictCode)) |>
+  distinct(District) |>
+  collect()
+
+# names in data but not in map
+data_districts <- data |> distinct(District) |> collect() |> arrange(District)
+map_districts  <- districts_map |> distinct(District) |> arrange(District)
+
+setdiff(data_districts$District, map_districts$District)  # in data, not in map
+setdiff(map_districts$District,  data_districts$District) # in map, not in data
+```
+
+## 2.1 All Germany
+Here I want to create a dataset for the whole Germany, at all frequencies (day, week, month and quarter), using the Registration date variable (not commission date):
+
+```{r}
+germany_day <- data |>
+  group_by(solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.day) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_week <- data |>
+  group_by(solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.week) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_month <- data |>
+  group_by(solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.month) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_quarter <- data |>
+  group_by(solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.quarter) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 2.2 Federal States
+
+```{r}
+state_day <- data |>
+  group_by(FederalState.names, solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.day) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+state_week <- data |>
+  group_by(FederalState.names, solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.week) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+state_month <- data |>
+  group_by(FederalState.names, solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.month) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+state_quarter <- data |>
+  group_by(FederalState.names, solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.quarter) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 2.3 Districts
+
+```{r}
+district_day <- data |>
+  group_by(District, solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.registration.day) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+district_week <- data |>
+  group_by(District, solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.registration.week) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+district_month <- data |>
+  group_by(District, solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.registration.month) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+district_quarter <- data |>
+  group_by(District, solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.registration.quarter) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 2.4 Municipalities
+
+```{r}
+mun_day <- data |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.registration.day) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+mun_week <- data |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.registration.week) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+mun_month <- data |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.registration.month) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+mun_quarter <- data |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.registration.quarter) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 2.5 Postal Codes
+
+```{r}
+plz_day <- data |>
+  group_by(PostalCode, solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.registration.day) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+plz_week <- data |>
+  group_by(PostalCode, solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.registration.week) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+plz_month <- data |>
+  group_by(PostalCode, solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.registration.month) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+plz_quarter <- data |>
+  group_by(PostalCode, solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.registration.quarter) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+
+# 3. Dataset 2025-2026 (CommissionDate)
+
+## 3.1 All Germany
+
+```{r}
+germany_com_day <- data |>
+  filter(!is.na(date.commission.day)) |>
+  group_by(solar_category, date.commission.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.commission.day = seq(min(date.commission.day), max(date.commission.day), by = "day"), fill = list(n = 0)) |>
+  arrange(solar_category, date.commission.day) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_com_week <- data |>
+  filter(!is.na(date.commission.week)) |>
+  group_by(solar_category, date.commission.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.commission.week = seq(min(date.commission.week), max(date.commission.week), by = "week"), fill = list(n = 0)) |>
+  arrange(solar_category, date.commission.week) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_com_month <- data |>
+  filter(!is.na(date.commission.month)) |>
+  group_by(solar_category, date.commission.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.commission.month = seq(min(date.commission.month), max(date.commission.month), by = "month"), fill = list(n = 0)) |>
+  arrange(solar_category, date.commission.month) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_com_quarter <- data |>
+  filter(!is.na(date.commission.quarter)) |>
+  group_by(solar_category, date.commission.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.commission.quarter = seq(min(date.commission.quarter), max(date.commission.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(solar_category, date.commission.quarter) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 3.2 Federal States
+
+```{r}
+state_com_day <- data |>
+  filter(!is.na(date.commission.day)) |>
+  group_by(FederalState.names, solar_category, date.commission.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.commission.day = seq(min(date.commission.day), max(date.commission.day), by = "day"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.commission.day) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+state_com_week <- data |>
+  filter(!is.na(date.commission.week)) |>
+  group_by(FederalState.names, solar_category, date.commission.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.commission.week = seq(min(date.commission.week), max(date.commission.week), by = "week"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.commission.week) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+state_com_month <- data |>
+  filter(!is.na(date.commission.month)) |>
+  group_by(FederalState.names, solar_category, date.commission.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.commission.month = seq(min(date.commission.month), max(date.commission.month), by = "month"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.commission.month) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+state_com_quarter <- data |>
+  filter(!is.na(date.commission.quarter)) |>
+  group_by(FederalState.names, solar_category, date.commission.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(FederalState.names, solar_category, date.commission.quarter = seq(min(date.commission.quarter), max(date.commission.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.commission.quarter) |>
+  group_by(FederalState.names, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 3.3 Districts
+
+```{r}
+district_com_day <- data |>
+  filter(!is.na(date.commission.day)) |>
+  group_by(District, solar_category, date.commission.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.commission.day = seq(min(date.commission.day), max(date.commission.day), by = "day"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.commission.day) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+district_com_week <- data |>
+  filter(!is.na(date.commission.week)) |>
+  group_by(District, solar_category, date.commission.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.commission.week = seq(min(date.commission.week), max(date.commission.week), by = "week"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.commission.week) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+district_com_month <- data |>
+  filter(!is.na(date.commission.month)) |>
+  group_by(District, solar_category, date.commission.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.commission.month = seq(min(date.commission.month), max(date.commission.month), by = "month"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.commission.month) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+district_com_quarter <- data |>
+  filter(!is.na(date.commission.quarter)) |>
+  group_by(District, solar_category, date.commission.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(District, solar_category, date.commission.quarter = seq(min(date.commission.quarter), max(date.commission.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(District, solar_category, date.commission.quarter) |>
+  group_by(District, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 3.4 Municipalities
+
+```{r}
+mun_com_day <- data |>
+  filter(!is.na(date.commission.day)) |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.commission.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.commission.day = seq(min(date.commission.day), max(date.commission.day), by = "day"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.commission.day) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+mun_com_week <- data |>
+  filter(!is.na(date.commission.week)) |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.commission.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.commission.week = seq(min(date.commission.week), max(date.commission.week), by = "week"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.commission.week) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+mun_com_month <- data |>
+  filter(!is.na(date.commission.month)) |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.commission.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.commission.month = seq(min(date.commission.month), max(date.commission.month), by = "month"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.commission.month) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+mun_com_quarter <- data |>
+  filter(!is.na(date.commission.quarter)) |>
+  group_by(Municipality, MunicipalityCode, solar_category, date.commission.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(Municipality, MunicipalityCode), solar_category, date.commission.quarter = seq(min(date.commission.quarter), max(date.commission.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(Municipality, solar_category, date.commission.quarter) |>
+  group_by(Municipality, MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+## 3.5 Postal Codes
+
+```{r}
+plz_com_day <- data |>
+  filter(!is.na(date.commission.day)) |>
+  group_by(PostalCode, solar_category, date.commission.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.commission.day = seq(min(date.commission.day), max(date.commission.day), by = "day"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.commission.day) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+plz_com_week <- data |>
+  filter(!is.na(date.commission.week)) |>
+  group_by(PostalCode, solar_category, date.commission.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.commission.week = seq(min(date.commission.week), max(date.commission.week), by = "week"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.commission.week) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+plz_com_month <- data |>
+  filter(!is.na(date.commission.month)) |>
+  group_by(PostalCode, solar_category, date.commission.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.commission.month = seq(min(date.commission.month), max(date.commission.month), by = "month"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.commission.month) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+plz_com_quarter <- data |>
+  filter(!is.na(date.commission.quarter)) |>
+  group_by(PostalCode, solar_category, date.commission.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(PostalCode, solar_category, date.commission.quarter = seq(min(date.commission.quarter), max(date.commission.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(PostalCode, solar_category, date.commission.quarter) |>
+  group_by(PostalCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+# 4. General function
+> Here I want to create a function where you can select sone inputs and you get a dataset. Inputs:
+- date variable (RegistrationDate or CommissioningDate)
+- date frequency (day, week, month, quarter, year)
+- geographic level (Germany, Federal State, District, Municipality, Postal Code)
+
+I want to dispaly the dataset only for 2 years of data, i.e., 2025 and 2026. So, for example, if I select RegistrationDate, month frequency and Municipality level, I want to get a dataset with the number of PVs registered in each month for each municipality, but only for the years 2025 and 2026.
+
+## 4.1 Function (with all code)
+> Here I want to show the whole code to understand the structure.
+
+```{r}
+pv_dataset <- function(date_var  = "RegistrationDate",   # "RegistrationDate" or "CommissioningDate"
+                       frequency = "month",              # "day", "week", "month", "quarter", "year"
+                       geo_level = "Germany") {          # "Germany", "FederalState", "District", "Municipality", "PostalCode"
+
+  # --- prepare data ---
+  data <- open_dataset(here("01_data", "EinheitenSolar_all.parquet")) |>
+    rename(
+      RegistrationDate            = Registrierungsdatum,
+      CommissioningDate           = Inbetriebnahmedatum,
+      FederalState.names          = Bundesland,
+      District                    = Landkreis,
+      Municipality                = Gemeinde,
+      MunicipalityCode            = Gemeindeschluessel,
+      PostalCode                  = Postleitzahl,
+      TypeOfSolarSystem           = ArtDerSolaranlage,
+      GrossCapacity               = Bruttoleistung,
+      AssignedActivePowerInverter = ZugeordneteWirkleistungWechselrichter,
+      Country                     = Land
+    ) |>
+    mutate(
+      RegistrationDate            = as.Date(RegistrationDate),
+      CommissioningDate           = as.Date(CommissioningDate),
+      TypeOfSolarSystem           = as.integer(TypeOfSolarSystem),
+      Country                     = as.integer(Country),
+      GrossCapacity               = as.numeric(GrossCapacity),
+      AssignedActivePowerInverter = as.numeric(AssignedActivePowerInverter)
+    ) |>
+    filter(Country == 84L) |>
+    mutate(
+      solar_category = case_when(
+        TypeOfSolarSystem == 2961L & RegistrationDate <  as.Date("2024-05-16") & AssignedActivePowerInverter <= 0.6                      ~ "Plug_in_sola_system - Balcony",
+        TypeOfSolarSystem == 2961L & RegistrationDate >= as.Date("2024-05-16") & AssignedActivePowerInverter <= 0.8 & GrossCapacity <= 2.0 ~ "Plug_in_sola_system - Balcony",
+        TypeOfSolarSystem == 2961L  ~ "Plug_in_sola_system - Non-Balcony",
+        TypeOfSolarSystem == 853L   ~ "Structural_facilities",
+        TypeOfSolarSystem == 2484L  ~ "Other_Structural_facilities",
+        TypeOfSolarSystem == 852L   ~ "Open_space",
+        TypeOfSolarSystem == 3002L  ~ "Bodies_water",
+        TypeOfSolarSystem == 3058L  ~ "Large_parking_lot",
+        TRUE                        ~ "Other"
+      ),
+      date.registration.day     = RegistrationDate,
+      date.registration.week    = floor_date(RegistrationDate,  "week"),
+      date.registration.month   = floor_date(RegistrationDate,  "month"),
+      date.registration.quarter = floor_date(RegistrationDate,  "quarter"),
+      date.registration.year    = floor_date(RegistrationDate,  "year"),
+      date.commission.day       = CommissioningDate,
+      date.commission.week      = floor_date(CommissioningDate, "week"),
+      date.commission.month     = floor_date(CommissioningDate, "month"),
+      date.commission.quarter   = floor_date(CommissioningDate, "quarter"),
+      date.commission.year      = floor_date(CommissioningDate, "year")
+    ) |>
+    filter(RegistrationDate >= as.Date("2025-01-01"),
+           RegistrationDate <= as.Date("2026-12-31"))
+
+  # --- date column and geo columns ---
+  date_prefix <- if (date_var == "RegistrationDate") "date.registration" else "date.commission"
+  date_col    <- paste0(date_prefix, ".", frequency)
+
+  geo_cols <- switch(geo_level,
+    "Germany"      = character(0),
+    "FederalState" = "FederalState.names",
+    "District"     = "District",
+    "Municipality" = c("Municipality", "MunicipalityCode"),
+    "PostalCode"   = "PostalCode"
+  )
+
+  group_cols <- c(geo_cols, "solar_category", date_col)
+
+  # --- aggregate ---
+  result <- data |>
+    group_by(across(all_of(group_cols))) |>
+    summarise(n = n(), .groups = "drop") |>
+    collect()
+
+  # fill zeros
+  date_seq <- seq(min(result[[date_col]]), max(result[[date_col]]), by = frequency)
+
+  if (length(geo_cols) == 0) {
+    result <- result |>
+      complete(solar_category, !!sym(date_col) := date_seq, fill = list(n = 0))
+  } else if (length(geo_cols) == 1) {
+    result <- result |>
+      complete(.data[[geo_cols]], solar_category, !!sym(date_col) := date_seq, fill = list(n = 0))
+  } else {
+    result <- result |>
+      complete(nesting(!!!syms(geo_cols)), solar_category, !!sym(date_col) := date_seq, fill = list(n = 0))
+  }
+
+  # cumulative sum
+  result <- result |>
+    arrange(across(all_of(c(geo_cols, "solar_category", date_col)))) |>
+    group_by(across(all_of(c(geo_cols, "solar_category")))) |>
+    mutate(n_cumulative = cumsum(n)) |>
+    ungroup()
+
+  return(result)
+}
+
+# examples
+pv_dataset(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Germany")
+pv_dataset(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Municipality")
+pv_dataset(date_var = "CommissioningDate", frequency = "quarter", geo_level = "FederalState")
+```
+
+## 4.2 Function (load saved datasets)
+> Here I want to create the function that it gives you the dataset but instead of creating the dataset, it just load the files in the folder (*19. OTHER TASKS\1. Iran\3. data\1. dataset*). It has the same inputs, but instead of running the code, it just load the corresponding file. For example, if I select RegistrationDate, month frequency and Municipality level, it will load the file *mun_month.parquet* from the folder.
+
+
+```{r}
+pv_load <- function(date_var  = "RegistrationDate",   # "RegistrationDate" or "CommissioningDate"
+                    frequency = "month",              # "day", "week", "month", "quarter"
+                    geo_level = "Germany") {          # "Germany", "FederalState", "District", "Municipality", "PostalCode"
+
+  # date folder
+  date_folder <- switch(date_var,
+    "RegistrationDate"  = "1. RegsitrationDate",
+    "CommissioningDate" = "2. CommissionDate"
+  )
+
+  # geo subfolder
+  geo_folder <- switch(geo_level,
+    "Germany"      = "5. Germany",
+    "FederalState" = "1. Federal State",
+    "District"     = "2. District",
+    "Municipality" = "3. Municipality",
+    "PostalCode"   = "4. Postal Code"
+  )
+
+  # file prefix
+  com_suffix <- if (date_var == "CommissioningDate") "_com" else ""
+
+  prefix <- switch(geo_level,
+    "Germany"      = paste0("germany",  com_suffix),
+    "FederalState" = paste0("state",    com_suffix),
+    "District"     = paste0("district", com_suffix),
+    "Municipality" = paste0("mun",      com_suffix),
+    "PostalCode"   = paste0("plz",      com_suffix)
+  )
+
+  file_name <- paste0(prefix, "_", frequency, ".parquet")
+
+  read_parquet(here("1. ignore", "3. data", "1. dataset",
+                    date_folder, geo_folder, file_name))
+}
+
+# examples
+pv_load(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Municipality")
+pv_load(date_var = "CommissioningDate", frequency = "quarter", geo_level = "FederalState")
+```
+
+Load datasets separately:
+
+```{r}
+# via function
+df_fn_1 <- pv_load(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Municipality")
+df_fn_2 <- pv_load(date_var = "CommissioningDate", frequency = "quarter", geo_level = "FederalState")
+
+# manually
+df_man_1 <- read_parquet(here("1. ignore", "3. data", "1. dataset",
+                               "1. RegsitrationDate", "3. Municipality", "mun_month.parquet"))
+df_man_2 <- read_parquet(here("1. ignore", "3. data", "1. dataset",
+                               "2. CommissionDate",   "1. Federal State", "state_com_quarter.parquet"))
+```
+
+Check if they are identical:
+
+```{r}
+identical(df_fn_1, df_man_1)
+identical(df_fn_2, df_man_2)
+```
