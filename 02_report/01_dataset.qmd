@@ -871,23 +871,3 @@ pv_load(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Muni
 pv_load(date_var = "CommissioningDate", frequency = "quarter", geo_level = "FederalState")
 ```
 
-Load datasets separately:
-
-```{r}
-# via function
-df_fn_1 <- pv_load(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Municipality")
-df_fn_2 <- pv_load(date_var = "CommissioningDate", frequency = "quarter", geo_level = "FederalState")
-
-# manually
-df_man_1 <- read_parquet(here("1. ignore", "3. data", "1. dataset",
-                               "1. RegsitrationDate", "3. Municipality", "mun_month.parquet"))
-df_man_2 <- read_parquet(here("1. ignore", "3. data", "1. dataset",
-                               "2. CommissionDate",   "1. Federal State", "state_com_quarter.parquet"))
-```
-
-Check if they are identical:
-
-```{r}
-identical(df_fn_1, df_man_1)
-identical(df_fn_2, df_man_2)
-```

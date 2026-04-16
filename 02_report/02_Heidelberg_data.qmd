@@ -1,0 +1,129 @@
+---
+title: 'Heidelberg data: analysis'
+format: html
+---
+
+
+
+# 1. Load the dataset
+> Here I load the datasets and I filter for Heidelberg municipality (MunicipalityCode = 08221000)
+
+Load the dataset using the function that admits the following inputs:
+
+- *date_var*: `"RegistrationDate"` or `"CommissioningDate"`
+- *frequency*: `"day"`, `"week"`, `"month"`, or `"quarter"`
+- *geo_level*: `"Germany"`, `"FederalState"`, `"District"`, `"Municipality"`, or `"PostalCode"`
+
+
+```{r}
+pv_load <- function(date_var  = "RegistrationDate",   # "RegistrationDate" or "CommissioningDate"
+                    frequency = "month",              # "day", "week", "month", "quarter"
+                    geo_level = "Germany") {          # "Germany", "FederalState", "District", "Municipality", "PostalCode"
+
+  # date folder
+  date_folder <- switch(date_var,
+    "RegistrationDate"  = "1. RegsitrationDate",
+    "CommissioningDate" = "2. CommissionDate"
+  )
+
+  # geo subfolder
+  geo_folder <- switch(geo_level,
+    "Germany"      = "5. Germany",
+    "FederalState" = "1. Federal State",
+    "District"     = "2. District",
+    "Municipality" = "3. Municipality",
+    "PostalCode"   = "4. Postal Code"
+  )
+
+  # file prefix
+  com_suffix <- if (date_var == "CommissioningDate") "_com" else ""
+
+  prefix <- switch(geo_level,
+    "Germany"      = paste0("germany",  com_suffix),
+    "FederalState" = paste0("state",    com_suffix),
+    "District"     = paste0("district", com_suffix),
+    "Municipality" = paste0("mun",      com_suffix),
+    "PostalCode"   = paste0("plz",      com_suffix)
+  )
+
+  file_name <- paste0(prefix, "_", frequency, ".parquet")
+
+  read_parquet(here("01_data", "1. dataset",
+                    date_folder, geo_folder, file_name))
+}
+
+# examples
+pv_load(date_var = "RegistrationDate",  frequency = "month",   geo_level = "Municipality")
+pv_load(date_var = "CommissioningDate", frequency = "quarter", geo_level = "FederalState")
+
+```
+
+Now, I want to filter for Heidelberg municipality:
+
+```{r}
+h1.day <- pv_load(date_var = "RegistrationDate",
+            frequency = "day",
+            geo_level = "Municipality") |>
+  filter(MunicipalityCode == "08221000")
+
+h1.week <- pv_load(date_var = "RegistrationDate",
+            frequency = "week",
+            geo_level = "Municipality") |>
+  filter(MunicipalityCode == "08221000")
+
+h1.month <- pv_load(date_var = "RegistrationDate",
+            frequency = "month",
+            geo_level = "Municipality") |>
+  filter(MunicipalityCode == "08221000")
+```
+
+# 2. Iran war: some facts
+> Here I want to show the facts relevant for the Iran War.
+
+Table with most important dates:
+
+```{r}
+hormuz_dates <- data.frame(
+  Date = c(
+    "28 Feb – 1 Mar 2026",
+    "2 Mar 2026",
+    "6 Mar 2026",
+    "~10 Mar 2026",
+    "~17 Mar 2026",
+    "21 Mar 2026",
+    "8 Apr 2026"
+  ),
+  Event = c(
+    "Iran closes the Strait of Hormuz; shipping grinds to standstill — 150+ oil tankers and freight ships stalled",
+    "Iran formally declares no oil will leave the area; Iran seizes two oil tankers passing through the strait",
+    "Satellite imagery confirms Ras Laffan (Qatar's main gas export hub) shutdown — fuel prices spike",
+    "GPS jamming near the strait disrupts tanker navigation, raising accident risk",
+    "US launches naval campaign to reopen the strait; Iran warns Bahrain and UAE they 'will be the first to lose' if they join",
+    "US strikes Natanz nuclear facility with bunker busters; Iran vows to keep strait closed",
+    "Ceasefire agreed — strait partially reopens; Iran retains toll collection in Chinese yuan"
+  )
+)
+
+knitr::kable(hormuz_dates, col.names = c("Date", "Event"))
+```
+
+# 3. Solar Categories over time
+> Here for each frequency I want to see the general evolution of the solar units.
+
+## 3.1 Evolution Solar Categories: daily frequency
+
+Dataset:
+
+```{r}
+h1.day <- pv_load(date_var = "RegistrationDate",
+            frequency = "day",
+            geo_level = "Municipality") |>
+  filter(MunicipalityCode == "08221000")
+```
+
+
+Plot:
+
+```{r}
+
+```
