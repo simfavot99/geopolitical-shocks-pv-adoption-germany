@@ -1,0 +1,45 @@
+---
+title: 'Load maps'
+format: html
+---
+
+
+
+
+> Here I want to load the files in: "6. Maps\6.1. Dataset". I want to check that for eahc geographic level we have the code, so we can perform merges.
+
+Libraries:
+
+```{r}
+library(here)
+source(knitr::purl(here('ignore/libraries.qmd'), output = tempfile(), quiet = TRUE))
+```
+
+
+# 1. Districts
+
+```{r}
+districts <- st_read_parquet(here("6. Maps", "6.1. Dataset", "districts.parquet"))
+glimpse(districts)
+```
+
+# 2. Federal States
+
+```{r}
+federal_states <- st_read_parquet(here("6. Maps", "6.1. Dataset", "federalState.parquet"))
+glimpse(federal_states)
+```
+
+# 3. Municipalities
+
+```{r}
+municipalities <- st_read_parquet(here("6. Maps", "6.1. Dataset", "municipalities.parquet"))
+glimpse(municipalities)
+```
+
+# 4. Postal Codes
+
+```{r}
+postal_codes <- st_read_parquet(here("6. Maps", "6.1. Dataset", "postalCodes.parquet"))
+glimpse(postal_codes)
+```
