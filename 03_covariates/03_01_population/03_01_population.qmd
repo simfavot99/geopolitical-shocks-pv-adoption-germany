@@ -148,15 +148,18 @@ purrr::map(population_raw, function(i) {head(unique(i))}) |> kable()
 pop.municipality <- population_raw |>
   filter(is.na(`2_variable_attribute_code`)) |>
   select(
-    code       = `1_variable_attribute_code`,
-    name       = `1_variable_attribute_label`,
-    year       = time,
-    population = value
+    MunicipalityCode = `1_variable_attribute_code`,
+    Municipality     = `1_variable_attribute_label`,
+    year             = time,
+    population       = value
   ) |>
   mutate(
     date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
     population = suppressWarnings(as.numeric(population))
-  )
+  ) |>
+  select(Municipality, MunicipalityCode, date, population) |>
+  arrange(Municipality, date)
+
 ```
 
 Code to saev the file here: 4. datasets\4.2. federal state\1. data
@@ -165,7 +168,7 @@ I am not going to save just for Heidelberg, but for all municipalities. Once you
 ```{r}
 arrow::write_parquet(
   pop.municipality,
-  here("4. datasets", "4.3. municipality", "1. data", "population.parquet")
+  here("4. datasets", "4.3. Heidelberg", "1. data", "population.parquet")
 )
 ```
 
@@ -175,11 +178,11 @@ Load the dataset:
 
 ```{r}
 pop.municipality <- arrow::read_parquet(
-  here("4. datasets", "4.3. municipality", "1. data", "population.parquet")
+  here("4. datasets", "4.3. Heidelberg", "1. data", "population.parquet")
 )
 ```
 
-
+---
 
 # 2. Select 2023 population data
 > Here I want to show how to produce the code to select 2023 population data for Germany, federal states and municipalities (Heidelberg). First, load the files, then filter them.
@@ -205,7 +208,7 @@ pop.federal_state.2023 <- read_parquet(here("4. datasets", "4.2. federal state",
 > Select 2023 population data for municipalities. Load the file from "44. datasets\4.3. Heidelberg\1. data" and filter it.
 
 ```{r}
-pop.heidelberg.2023 <- read_parquet(here("4. datasets", "4.3. municipality", "1. data", "population.parquet")) |>
+pop.heidelberg.2023 <- read_parquet(here("4. datasets", "4.3. Heidelberg", "1. data", "population.parquet")) |>
   filter(date == as.Date("2023-12-31"), 
         code == "08221000")
 ```
