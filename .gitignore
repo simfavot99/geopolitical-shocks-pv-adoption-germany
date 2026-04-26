@@ -57,3 +57,8 @@ ignore/
 
 # Large data files
 01_data/EinheitenSolar_all.parquet
+
+# Dataset outputs
+4. datasets/4.1. all germany/1. data/
+4. datasets/4.2. federal state/1. data/
+4. datasets/4.3. Heidelberg/1. data/
