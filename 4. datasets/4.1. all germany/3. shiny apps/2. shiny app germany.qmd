@@ -1,0 +1,417 @@
+---
+title: 'Shiny app for Germany'
+format: html
+---
+
+
+> Here I want to show the code to create a shiny app.
+
+
+Libraries:
+
+```{r}
+
+```
+
+Libraries (necessary):
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here,        # here()
+  arrow,       # open_dataset(), read_parquet(), write_parquet(), collect()
+  sfarrow,     # st_read_parquet()
+  sf,          # st_drop_geometry()
+  dplyr,       # rename, mutate, case_when, if_else, left_join, relocate,
+               # filter, select, group_by, summarise, arrange, pull, ungroup, n
+  tibble,      # tibble()
+  tidyr,       # complete()
+  lubridate,   # floor_date()
+  stringr,     # str_pad()
+  restatis     # gen_logincheck(), gen_table()
+)
+```
+
+
+# 1. Datatsets
+> Here you have the code to load the datasets.
+
+
+## 1.1. Generate the dataset
+> Here there is the code to generate from zero the datasets for Germany.
+
+
+
+```{r}
+data <- open_dataset(here("01_data/EinheitenSolar_all.parquet"))
+
+
+# Step 1: rename German → English (explicit mapping, column order differs from old dataset)
+data <- data |>
+  rename(
+    UnitMastrNumber                          = EinheitMastrNummer,
+    DateLastUpdate                           = DatumLetzteAktualisierung,
+    LocationMastrNumber                      = LokationMaStRNummer,
+    GridOperatorVerificationStatus           = NetzbetreiberpruefungStatus,
+    GridOperatorVerificationDate             = NetzbetreiberpruefungDatum,
+    PlantOperatorMastrNumber                 = AnlagenbetreiberMastrNummer,
+    Country                                  = Land,
+    FederalState                             = Bundesland,
+    District                                 = Landkreis,
+    Municipality                             = Gemeinde,
+    MunicipalityCode                         = Gemeindeschluessel,
+    PostalCode                               = Postleitzahl,
+    City                                     = Ort,
+    RegistrationDate                         = Registrierungsdatum,
+    CommissioningDate                        = Inbetriebnahmedatum,
+    UnitSystemStatus                         = EinheitSystemstatus,
+    UnitOperationalStatus                    = EinheitBetriebsstatus,
+    NotPresentInMigratedUnits                = NichtVorhandenInMigriertenEinheiten,
+    PowerGenerationUnitName                  = NameStromerzeugungseinheit,
+    Weic_NotAvailable                        = Weic_nv,
+    PowerPlantNumber_NotAvailable            = Kraftwerksnummer_nv,
+    EnergySource                             = Energietraeger,
+    GrossCapacity                            = Bruttoleistung,
+    NetNominalCapacity                       = Nettonennleistung,
+    RemoteControllabilityGridOperator        = FernsteuerbarkeitNb,
+    FeedInType                               = Einspeisungsart,
+    AssignedActivePowerInverter              = ZugeordneteWirkleistungWechselrichter,
+    NumberOfModules                          = AnzahlModule,
+    TypeOfSolarSystem                        = ArtDerSolaranlage,
+    PowerLimitation                          = Leistungsbegrenzung,
+    UniformOrientationAndTiltAngle           = EinheitlicheAusrichtungUndNeigungswinkel,
+    MainOrientation                          = Hauptausrichtung,
+    MainOrientationTiltAngle                 = HauptausrichtungNeigungswinkel,
+    UsageArea                                = Nutzungsbereich,
+    EegMastrNumber                           = EegMaStRNummer,
+    StorageAtSameLocation                    = SpeicherAmGleichenOrt,
+    SecondaryOrientation                     = Nebenausrichtung,
+    SecondaryOrientationTiltAngle            = NebenausrichtungNeigungswinkel,
+    Street                                   = Strasse,
+    StreetNotFound                           = StrasseNichtGefunden,
+    HouseNumber_NotAvailable                 = Hausnummer_nv,
+    HouseNumberNotFound                      = HausnummerNichtGefunden,
+    Longitude                                = Laengengrad,
+    Latitude                                 = Breitengrad,
+    DateStartTemporaryDecommissioning        = DatumBeginnVoruebergehendeStilllegung,
+    HouseNumber                              = Hausnummer,
+    AddressAddition                          = Adresszusatz,
+    RemoteControllabilityDirectMarketer      = FernsteuerbarkeitDv,
+    PreviousPlantOperatorMastrNumber         = AltAnlagenbetreiberMastrNummer,  # new variable
+    DateOfOperatorChange                     = DatumDesBetreiberwechsels,
+    DateRegistrationOfOperatorChange         = DatumRegistrierungDesBetreiberwechsels,
+    CadastralDistrict                        = Gemarkung,
+    FieldParcelNumbers                       = FlurFlurstuecknummern,
+    ConnectionToExtraHighOrHighVoltage       = AnschlussAnHoechstOderHochSpannung,
+    DatePermanentDecommissioning             = DatumEndgueltigeStilllegung,
+    SizeOfUsedAreaInHectares                 = GroesseDerInAnspruchGenommenenFlaecheInHektar,
+    PreviousUsageTypeOfArea                  = VorherigerNutzungsartenbereichDerFlaeche,
+    PredominantUsageTypeBeforeSolarConstruction = UeberwiegendeNutzungsartDerFlaecheVorErrichtung,
+    NameOfSolarPark                          = NameDesSolarparks,
+    AdditionalFeaturesOfAreaAndCurrentUsage  = ZusaetzlicheMerkmaleDerFlaecheUndDerAktuellenFlaechennutzung,
+    GenMastrNumber                           = GenMastrNummer,
+    CommissioningDateAtCurrentLocation       = InbetriebnahmedatumAmAktuellenStandort,
+    DispatchResponsible                      = Einsatzverantwortlicher,
+    CitizenEnergy                            = Buergerenergie,
+    DateResumptionOfOperation                = DatumWiederaufnahmeBetrieb,
+    PlannedCommissioningDate                 = GeplantesInbetriebnahmedatum,
+    ClearanceHeight                          = LichteHoehe,
+    PowerPlantNumber                         = Kraftwerksnummer
+  )
+
+# Step 2: convert numeric columns (XML parsing stores everything as character)
+data <- data |>
+  mutate(
+    TypeOfSolarSystem           = as.integer(TypeOfSolarSystem),
+    Country                     = as.integer(Country),
+    FederalState                = as.integer(FederalState),
+    GrossCapacity               = as.numeric(GrossCapacity),
+    NetNominalCapacity          = as.numeric(NetNominalCapacity),
+    AssignedActivePowerInverter = as.numeric(AssignedActivePowerInverter),
+    NumberOfModules             = as.integer(NumberOfModules)
+  )
+
+# Step 3: lookup tables
+C1 <- data.frame(
+  TypeOfSolarSystem.names = c(
+    "Structural_facilities", "Other_Structural_facilities", "Open_space",
+    "Bodies_water", "Large_parking_lot", "Plug_in_sola_system", "Onshore&Offshore_wind_power"
+  ),
+  TypeOfSolarSystem = as.integer(c(853, 2484, 852, 3002, 3058, 2961, NA))
+)
+
+C2 <- tibble(
+  Country = as.integer(c(84, 231, 90, 66, 198, 206, 106)),
+  Country.sn = c("Germany", "Switzerland", "Denmark", "Belgium", "Netherlands", "Austria", "France")
+)
+
+C3 <- data.frame(
+  FederalState = as.integer(c(
+    1409, 1402, 1400, 1403, 1412, 1408, 1410, 1407,
+    1414, 1411, 1413, 1405, 1415, 1406, 1401, 1404
+  )),
+  FederalState.names = c(
+    "North Rhine-Westphalia", "Baden-Württemberg", "Brandenburg", "Bavaria",
+    "Saarland", "Lower Saxony", "Rhineland-Palatinate", "Mecklenburg-Western Pomerania",
+    "Saxony-Anhalt", "Schleswig-Holstein", "Saxony", "Hesse",
+    "Thuringia", "Hamburg", "Berlin", "Bremen"
+  ),
+  FederalStateCode = c(
+    "DEA", "DE1", "DE4", "DE2",
+    "DEC", "DE9", "DEB", "DEM",
+    "DEE", "DEF", "DED", "DE7",
+    "DEG", "DE6", "DE3", "DE5"
+  )
+)
+
+# district code from map (no geometry needed)
+districts_map <- st_read_parquet(here("ignore/3. data/2. maps/districts.parquet")) |>
+  st_drop_geometry() |>
+  select(District, DistrictCode)
+
+# Step 4: join lookups
+data <- data |>
+  left_join(C1, by = "TypeOfSolarSystem") |>
+  relocate(TypeOfSolarSystem.names, .after = TypeOfSolarSystem) |>
+  left_join(C2, by = "Country") |>
+  relocate(Country.sn, .after = Country) |>
+  left_join(C3, by = "FederalState") |>
+  relocate(FederalState.names, .after = FederalState) |>
+  relocate(FederalStateCode, .after = FederalState.names) |>
+  left_join(districts_map, by = "District") |>
+  relocate(DistrictCode, .after = District)
+
+# Step 5: solar_category
+reform_date <- as.Date("2024-05-16")
+
+data <- data |>
+  mutate(
+    RegistrationDate  = as.Date(RegistrationDate),
+    CommissioningDate = as.Date(CommissioningDate),
+    solar_category = case_when(
+      TypeOfSolarSystem == 2961 & RegistrationDate <  reform_date & AssignedActivePowerInverter <= 0.6 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 & RegistrationDate >= reform_date & AssignedActivePowerInverter <= 0.8 & GrossCapacity <= 2.0 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 ~ "Plug_in_sola_system - Non-Balcony",
+      TRUE ~ TypeOfSolarSystem.names
+    )
+  )
+# Step 6: filter Germany
+data <- data |>
+  filter(Country.sn == "Germany")
+
+# Step 7: date variables (week, month, quarter, year)
+data <- data |>
+  mutate(
+    date.registration.day     = RegistrationDate,
+    date.registration.week    = floor_date(RegistrationDate,  "week"),
+    date.registration.month   = floor_date(RegistrationDate,  "month"),
+    date.registration.quarter = floor_date(RegistrationDate,  "quarter"),
+    date.registration.year    = floor_date(RegistrationDate,  "year"),
+    date.commission.day       = CommissioningDate,
+    date.commission.week      = floor_date(CommissioningDate, "week"),
+    date.commission.month     = floor_date(CommissioningDate, "month"),
+    date.commission.quarter   = floor_date(CommissioningDate, "quarter"),
+    date.commission.year      = floor_date(CommissioningDate, "year")
+  )
+
+# Step 8: fix MunicipalityCode
+data <- data |>
+  mutate(MunicipalityCode = str_pad(as.character(MunicipalityCode), 8, pad = "0"))
+
+
+# Collapse every category other than `Balcony PVs` into a single `Non-balcony PVs` group:
+data <- data |>
+  mutate(solar_category = if_else(solar_category == "Plug_in_sola_system - Balcony",
+                                  "Balcony PVs",
+                                  "Non-balcony PVs"))
+
+# frequencies:
+germany_day <- data |>
+  group_by(solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.day) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_week <- data |>
+  group_by(solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.week) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_month <- data |>
+  group_by(solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.month) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_quarter <- data |>
+  group_by(solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.quarter) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
+germany_year <- data |>
+  group_by(solar_category, date.registration.year) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(solar_category, date.registration.year = seq(min(date.registration.year), max(date.registration.year), by = "year"),
+           fill = list(n = 0)) |>
+  arrange(solar_category, date.registration.year) |>
+  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+Population data:
+
+```{r}
+# credentials
+gen_logincheck(database = "genesis")
+gen_logincheck(database = "regio")
+
+
+# load the dataset
+pop.germany <- gen_table(
+  name      = "12411-0001",
+  database  = "genesis",
+  language  = "en",
+  startyear = 2010,
+  endyear   = 2024
+) |>
+  select(
+    country    = `1_variable_attribute_label`,
+    year       = time,
+    population = value
+  ) |>
+  mutate(
+    date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
+    population = suppressWarnings(as.numeric(population))
+  ) |>
+  select(country, date, population) |>
+  arrange(date)
+
+
+# Filter the dataste for 2023 population data:
+
+pop.germany.2023 <- pop.germany |>
+  filter(date == as.Date("2023-12-31"))
+
+# vector 
+pop_2023 <- pop.germany.2023 |> pull(population)
+```
+
+Merge population data with the frequency datasets and calculate per 100k population:
+
+```{r}
+germany_day <- germany_day |>
+  mutate(
+    n_per100k            = (n            / pop_2023) * 100000,
+    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
+  )
+
+germany_week <- germany_week |>
+  mutate(
+    n_per100k            = (n            / pop_2023) * 100000,
+    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
+  )
+
+germany_month <- germany_month |>
+  mutate(
+    n_per100k            = (n            / pop_2023) * 100000,
+    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
+  )
+
+germany_quarter <- germany_quarter |>
+  mutate(
+    n_per100k            = (n            / pop_2023) * 100000,
+    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
+  )
+
+germany_year <- germany_year |>
+  mutate(
+    n_per100k            = (n            / pop_2023) * 100000,
+    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
+  )
+```
+
+
+
+
+## 1.2. load the 
+```{r}
+out_dir <- here("4. datasets", "4.1. all germany", "1. data")
+
+germany_day     <- read_parquet(file.path(out_dir, "germany_day.parquet"))
+germany_week    <- read_parquet(file.path(out_dir, "germany_week.parquet"))
+germany_month   <- read_parquet(file.path(out_dir, "germany_month.parquet"))
+germany_quarter <- read_parquet(file.path(out_dir, "germany_quarter.parquet"))
+germany_year    <- read_parquet(file.path(out_dir, "germany_year.parquet"))
+```
+
+
+
+# 2. Shiny app
+> Here I want to show how to generate a Shiny app to look at the data.
+
+Input data:
+    1. frequncies of registrations by day, week, month, quarter, year (germany_day, germany_week, germany_month, germany_quarter, germany_year)
+    2. cumulative or not
+    3. adjusted for population or not
+    4. slider to dispaly the time periods
+    5. which serie to dispaly (Balcony PVs, Non-balcony PVs, or both)
+
+```{r}
+library(shiny)
+library(ggplot2)
+library(dplyr)
+
+# normalise date column name across all frequencies
+dfs <- list(
+  day     = rename(germany_day,     date = date.registration.day),
+  week    = rename(germany_week,    date = date.registration.week),
+  month   = rename(germany_month,   date = date.registration.month),
+  quarter = rename(germany_quarter, date = date.registration.quarter),
+  year    = rename(germany_year,    date = date.registration.year)
+)
+
+shinyApp(
+  ui = fluidPage(
+    fluidRow(
+      column(3,
+        selectInput("freq", "Frequency", names(dfs), "week"),
+        checkboxGroupInput("cat", "Category",
+          choices  = c("Balcony PVs", "Non-balcony PVs"),
+          selected = c("Balcony PVs", "Non-balcony PVs")
+        ),
+        checkboxInput("cum", "Cumulative",          FALSE),
+        checkboxInput("pop", "Per 100k population", FALSE)
+      ),
+      column(9,
+        sliderInput("range", NULL,
+          min = min(dfs$day$date), max = max(dfs$day$date),
+          value = c(as.Date("2022-01-01"), max(dfs$day$date)),
+          width = "100%"
+        ),
+        plotOutput("plot")
+      )
+    )
+  ),
+  server = function(input, output) {
+    output$plot <- renderPlot({
+      yvar <- case_when(
+        input$cum & input$pop ~ "n_cumulative_per100k",
+        input$cum             ~ "n_cumulative",
+        input$pop             ~ "n_per100k",
+        TRUE                  ~ "n"
+      )
+      dfs[[input$freq]] |>
+        filter(solar_category %in% input$cat,
+               date >= input$range[1], date <= input$range[2]) |>
+        ggplot(aes(date, .data[[yvar]], color = solar_category)) +
+        geom_line() +
+        labs(x = NULL, y = yvar, color = NULL) +
+        theme_minimal()
+    })
+  }
+)
+```
