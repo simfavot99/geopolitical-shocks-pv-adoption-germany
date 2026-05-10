@@ -1,0 +1,76 @@
+---
+title: 'How to merge all files'
+format: html
+---
+
+
+
+> Here I want to show how to merge all files once you download them from Market Master Register.
+
+
+
+Libraries:
+
+```{r}
+pacman::p_load(xml2, dplyr, tidyr, purrr, readr)
+```
+
+Folder where you can find all files: *D:\1.b. ZEW\2. new\1. sequential.work\10. data for MastermarketRegister\May7_Gesamtdatenexport_20260507_26.1*
+
+In the folder *1. data\1.1. all files* there are a few files named "EinheitenSolar_" + a number. I want to generate a unique dataset with all these files toegther.
+
+
+Here you have the code to generate the big data:
+```{r}
+
+
+data_path <- "D:/1.b. ZEW/2. new/1. sequential.work/10. data for MastermarketRegister/May7_Gesamtdatenexport_20260507_26.1"
+
+# List all files matching the pattern
+files <- list.files(data_path, pattern = "EinheitenSolar", full.names = TRUE)
+# files <- files[1:3]  # Uncomment to test with first 3 files only
+
+# Initialize output
+output <- NULL
+
+# Loop through all files
+for(i in 1:length(files)){
+
+  # Define the XML file path
+  xml_file <- files[i]
+
+  # Read the XML file
+  xml_data <- read_xml(xml_file)
+  
+  # Extract the root element (assuming all records are under a common parent node)
+  root_node <- xml_find_all(xml_data, "/*/*")  # Adjust if needed based on XML structure
+  
+  # Convert XML to a generic data frame
+  data_list <- map(root_node, ~ {
+    # Extract all children nodes for the current record
+    nodes <- xml_children(.x)
+    # Create a named list with tag names as column names and their text values
+    setNames(
+      map_chr(nodes, xml_text),  # Extract text content for each node
+      map_chr(nodes, xml_name)   # Extract the names of the nodes
+    )
+  })
+  
+  # Combine the list of records into a data frame
+  data_frame <- bind_rows(data_list)
+  
+  # Append to output
+  if(i == 1){
+    output <- data_frame
+  } else{
+    output <- bind_rows(output, data_frame)
+  }
+  
+  print(paste("Processed file", i, "of", length(files)))
+}
+
+# Display column names
+print(names(output))
+
+
+```
