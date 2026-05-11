@@ -1,10 +1,11 @@
 ---
-title: 'Shiny app for Germany'
+title: 'Shiny app for Federal States'
 format: html
 ---
 
 
 > Here I want to show the code to create a shiny app.
+
 
 
 Libraries (necessary):
@@ -27,17 +28,12 @@ pacman::p_load(
 ```
 
 
-# 1. Datatsets
-> Here you have the code to load the datasets.
+# 1. Dataset
 
-
-## 1.1. Generate the dataset
-> Here there is the code to generate from zero the datasets for Germany.
-
-
+***Dataset***:
 
 ```{r}
-data <- open_dataset(here("01_data/EinheitenSolar_all.parquet"))
+data <- open_dataset(here("01_data/1.2. May 7 2026/EinheitenSolar.parquet"))
 
 
 # Step 1: rename German → English (explicit mapping, column order differs from old dataset)
@@ -189,6 +185,7 @@ data <- data |>
       TRUE ~ TypeOfSolarSystem.names
     )
   )
+
 # Step 6: filter Germany
 data <- data |>
   filter(Country.sn == "Germany")
@@ -212,68 +209,69 @@ data <- data |>
 data <- data |>
   mutate(MunicipalityCode = str_pad(as.character(MunicipalityCode), 8, pad = "0"))
 
-
 # Collapse every category other than `Balcony PVs` into a single `Non-balcony PVs` group:
+
 data <- data |>
   mutate(solar_category = if_else(solar_category == "Plug_in_sola_system - Balcony",
                                   "Balcony PVs",
                                   "Non-balcony PVs"))
 
-# frequencies:
-germany_day <- data |>
-  group_by(solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
-  complete(solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"),
-           fill = list(n = 0)) |>
-  arrange(solar_category, date.registration.day) |>
-  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+# Frequencies:
+state_day <- data |>
+  group_by(FederalState.names, FederalStateCode, solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(FederalStateCode, FederalState.names), solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.day) |>
+  group_by(FederalState.names, FederalStateCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
 
-germany_week <- data |>
-  group_by(solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
-  complete(solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"),
-           fill = list(n = 0)) |>
-  arrange(solar_category, date.registration.week) |>
-  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+state_week <- data |>
+  group_by(FederalState.names, FederalStateCode, solar_category, date.registration.week) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(FederalStateCode, FederalState.names), solar_category, date.registration.week = seq(min(date.registration.week), max(date.registration.week), by = "week"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.week) |>
+  group_by(FederalState.names, FederalStateCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
 
-germany_month <- data |>
-  group_by(solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
-  complete(solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"),
-           fill = list(n = 0)) |>
-  arrange(solar_category, date.registration.month) |>
-  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+state_month <- data |>
+  group_by(FederalState.names, FederalStateCode, solar_category, date.registration.month) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(FederalStateCode, FederalState.names), solar_category, date.registration.month = seq(min(date.registration.month), max(date.registration.month), by = "month"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.month) |>
+  group_by(FederalState.names, FederalStateCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
 
-germany_quarter <- data |>
-  group_by(solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
-  complete(solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"),
-           fill = list(n = 0)) |>
-  arrange(solar_category, date.registration.quarter) |>
-  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+state_quarter <- data |>
+  group_by(FederalState.names, FederalStateCode, solar_category, date.registration.quarter) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(FederalStateCode, FederalState.names), solar_category, date.registration.quarter = seq(min(date.registration.quarter), max(date.registration.quarter), by = "quarter"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.quarter) |>
+  group_by(FederalState.names, FederalStateCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
 
-germany_year <- data |>
-  group_by(solar_category, date.registration.year) |> summarise(n = n(), .groups = "drop") |> collect() |>
-  complete(solar_category, date.registration.year = seq(min(date.registration.year), max(date.registration.year), by = "year"),
-           fill = list(n = 0)) |>
-  arrange(solar_category, date.registration.year) |>
-  group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+state_year <- data |>
+  group_by(FederalState.names, FederalStateCode, solar_category, date.registration.year) |> summarise(n = n(), .groups = "drop") |> collect() |>
+  complete(nesting(FederalStateCode, FederalState.names), solar_category, date.registration.year = seq(min(date.registration.year), max(date.registration.year), by = "year"), fill = list(n = 0)) |>
+  arrange(FederalState.names, solar_category, date.registration.year) |>
+  group_by(FederalState.names, FederalStateCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+
 ```
 
-Population data:
-
+***Population***:
 ```{r}
-# credentials
 gen_logincheck(database = "genesis")
 gen_logincheck(database = "regio")
 
-
-# load the dataset
-pop.germany <- gen_table(
-  name      = "12411-0001",
+# Code to create the dataset:
+pop.federal_state <- gen_table(
+  name      = "12411-0010",
   database  = "genesis",
   language  = "en",
-  startyear = 2010,
-  endyear   = 2024
-) |>
+  startyear = 2023,
+  endyear   = 2023
+)
+
+federal_state.codes <- tibble::tibble(
+  code = c("01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16"),
+  nuts = c("DEF","DE6","DE9","DE5","DEA","DE7","DEB","DE1","DE2","DEC","DE3","DE4","DEM","DED","DEE","DEG")
+)
+
+pop.federal_state.2023 <- pop.federal_state |>
   select(
-    country    = `1_variable_attribute_label`,
+    code       = `1_variable_attribute_code`,
+    name       = `1_variable_attribute_label`,
     year       = time,
     population = value
   ) |>
@@ -281,65 +279,69 @@ pop.germany <- gen_table(
     date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
     population = suppressWarnings(as.numeric(population))
   ) |>
-  select(country, date, population) |>
-  arrange(date)
-
-
-# Filter the dataste for 2023 population data:
-
-pop.germany.2023 <- pop.germany |>
-  filter(date == as.Date("2023-12-31"))
-
-# vector 
-pop_2023 <- pop.germany.2023 |> pull(population)
-```
-
-Merge population data with the frequency datasets and calculate per 100k population:
-
-```{r}
-germany_day <- germany_day |>
-  mutate(
-    n_per100k            = (n            / pop_2023) * 100000,
-    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
-  )
-
-germany_week <- germany_week |>
-  mutate(
-    n_per100k            = (n            / pop_2023) * 100000,
-    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
-  )
-
-germany_month <- germany_month |>
-  mutate(
-    n_per100k            = (n            / pop_2023) * 100000,
-    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
-  )
-
-germany_quarter <- germany_quarter |>
-  mutate(
-    n_per100k            = (n            / pop_2023) * 100000,
-    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
-  )
-
-germany_year <- germany_year |>
-  mutate(
-    n_per100k            = (n            / pop_2023) * 100000,
-    n_cumulative_per100k = (n_cumulative / pop_2023) * 100000
-  )
+  select(-year) |>
+  left_join(federal_state.codes, by = "code") |>
+  select(FederalState.names = name, FederalStateCode = nuts, date, population) |>
+  arrange(FederalStateCode, date)
 ```
 
 
+***Merge***:
 
-
-## 1.2. load the 
 ```{r}
-out_dir <- here("4. datasets", "4.1. all germany", "1. data")
+pop_lookup <- pop.federal_state.2023 |> select(FederalStateCode, population)
 
-germany_day     <- read_parquet(file.path(out_dir, "germany_day.parquet"))
-germany_week    <- read_parquet(file.path(out_dir, "germany_week.parquet"))
-germany_month   <- read_parquet(file.path(out_dir, "germany_month.parquet"))
-germany_quarter <- read_parquet(file.path(out_dir, "germany_quarter.parquet"))
-germany_year    <- read_parquet(file.path(out_dir, "germany_year.parquet"))
+state_day <- state_day |>
+  left_join(pop_lookup, by = "FederalStateCode") |>
+  mutate(
+    n_per100k            = (n            / population) * 100000,
+    n_cumulative_per100k = (n_cumulative / population) * 100000
+  ) |>
+  select(-population)
+
+state_week <- state_week |>
+  left_join(pop_lookup, by = "FederalStateCode") |>
+  mutate(
+    n_per100k            = (n            / population) * 100000,
+    n_cumulative_per100k = (n_cumulative / population) * 100000
+  ) |>
+  select(-population)
+
+state_month <- state_month |>
+  left_join(pop_lookup, by = "FederalStateCode") |>
+  mutate(
+    n_per100k            = (n            / population) * 100000,
+    n_cumulative_per100k = (n_cumulative / population) * 100000
+  ) |>
+  select(-population)
+
+state_quarter <- state_quarter |>
+  left_join(pop_lookup, by = "FederalStateCode") |>
+  mutate(
+    n_per100k            = (n            / population) * 100000,
+    n_cumulative_per100k = (n_cumulative / population) * 100000
+  ) |>
+  select(-population)
+
+state_year <- state_year |>
+  left_join(pop_lookup, by = "FederalStateCode") |>
+  mutate(
+    n_per100k            = (n            / population) * 100000,
+    n_cumulative_per100k = (n_cumulative / population) * 100000
+  ) |>
+  select(-population)
+```
+
+***Load***:
+
+```{r}
+out_dir <- here("4. datasets", "4.2. federal state", "1. data", "3")
+
+state_day     <- read_parquet(file.path(out_dir, "state_day.parquet"))
+state_week    <- read_parquet(file.path(out_dir, "state_week.parquet"))
+state_month   <- read_parquet(file.path(out_dir, "state_month.parquet"))
+state_quarter <- read_parquet(file.path(out_dir, "state_quarter.parquet"))
+state_year    <- read_parquet(file.path(out_dir, "state_year.parquet"))
 ```
 
 
@@ -348,31 +350,34 @@ germany_year    <- read_parquet(file.path(out_dir, "germany_year.parquet"))
 > Here I want to show how to generate a Shiny app to look at the data.
 
 Input data:
-    1. frequncies of registrations by day, week, month, quarter, year (germany_day, germany_week, germany_month, germany_quarter, germany_year)
+    1. frequncies of registrations by day, week, month, quarter, year (state_day, state_week, state_month, state_quarter, state_year)
     2. cumulative or not
     3. adjusted for population or not
     4. slider to dispaly the time periods
     5. which serie to dispaly (Balcony PVs, Non-balcony PVs, or both)
+    6. which federal states to display
 
 ```{r}
 library(shiny)
 library(ggplot2)
 library(dplyr)
 
-# normalise date column name across all frequencies
 dfs <- list(
-  day     = rename(germany_day,     date = date.registration.day),
-  week    = rename(germany_week,    date = date.registration.week),
-  month   = rename(germany_month,   date = date.registration.month),
-  quarter = rename(germany_quarter, date = date.registration.quarter),
-  year    = rename(germany_year,    date = date.registration.year)
+  day     = rename(state_day,     date = date.registration.day),
+  week    = rename(state_week,    date = date.registration.week),
+  month   = rename(state_month,   date = date.registration.month),
+  quarter = rename(state_quarter, date = date.registration.quarter),
+  year    = rename(state_year,    date = date.registration.year)
 )
+
+all_states <- sort(unique(dfs$week$FederalState.names))
 
 shinyApp(
   ui = fluidPage(
     fluidRow(
       column(3,
         selectInput("freq", "Frequency", names(dfs), "week"),
+        selectInput("state", "Federal State", all_states, selected = all_states[1], multiple = TRUE),
         checkboxGroupInput("cat", "Category",
           choices  = c("Balcony PVs", "Non-balcony PVs"),
           selected = c("Balcony PVs", "Non-balcony PVs")
@@ -399,11 +404,12 @@ shinyApp(
         TRUE                  ~ "n"
       )
       dfs[[input$freq]] |>
-        filter(solar_category %in% input$cat,
+        filter(FederalState.names %in% input$state,
+               solar_category %in% input$cat,
                date >= input$range[1], date <= input$range[2]) |>
-        ggplot(aes(date, .data[[yvar]], color = solar_category)) +
+        ggplot(aes(date, .data[[yvar]], color = FederalState.names, linetype = solar_category)) +
         geom_line() +
-        labs(x = NULL, y = yvar, color = NULL) +
+        labs(x = NULL, y = yvar, color = NULL, linetype = NULL) +
         theme_minimal()
     })
   }

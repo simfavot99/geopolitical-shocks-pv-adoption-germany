@@ -27,17 +27,13 @@ pacman::p_load(
 ```
 
 
-# 1. Datatsets
-> Here you have the code to load the datasets.
 
+# 1. dataset
 
-## 1.1. Generate the dataset
-> Here there is the code to generate from zero the datasets for Germany.
-
-
+***Dataset***:
 
 ```{r}
-data <- open_dataset(here("01_data/EinheitenSolar_all.parquet"))
+data <- open_dataset(here("01_data/1.2. May 7 2026/EinheitenSolar.parquet"))
 
 
 # Step 1: rename German → English (explicit mapping, column order differs from old dataset)
@@ -212,14 +208,13 @@ data <- data |>
 data <- data |>
   mutate(MunicipalityCode = str_pad(as.character(MunicipalityCode), 8, pad = "0"))
 
-
 # Collapse every category other than `Balcony PVs` into a single `Non-balcony PVs` group:
 data <- data |>
   mutate(solar_category = if_else(solar_category == "Plug_in_sola_system - Balcony",
                                   "Balcony PVs",
                                   "Non-balcony PVs"))
 
-# frequencies:
+# Frequency:
 germany_day <- data |>
   group_by(solar_category, date.registration.day) |> summarise(n = n(), .groups = "drop") |> collect() |>
   complete(solar_category, date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"),
@@ -256,21 +251,22 @@ germany_year <- data |>
   group_by(solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
 ```
 
-Population data:
 
+***Population***:
 ```{r}
-# credentials
+# gen_auth_save(database = 'genesis')
+# gen_auth_save(database = 'regio')
+
 gen_logincheck(database = "genesis")
 gen_logincheck(database = "regio")
 
-
-# load the dataset
-pop.germany <- gen_table(
+# Code to generate the dataset:
+pop.germany.2023 <- gen_table(
   name      = "12411-0001",
   database  = "genesis",
   language  = "en",
-  startyear = 2010,
-  endyear   = 2024
+  startyear = 2023,
+  endyear   = 2023
 ) |>
   select(
     country    = `1_variable_attribute_label`,
@@ -281,22 +277,15 @@ pop.germany <- gen_table(
     date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
     population = suppressWarnings(as.numeric(population))
   ) |>
-  select(country, date, population) |>
-  arrange(date)
-
-
-# Filter the dataste for 2023 population data:
-
-pop.germany.2023 <- pop.germany |>
-  filter(date == as.Date("2023-12-31"))
-
-# vector 
-pop_2023 <- pop.germany.2023 |> pull(population)
+  select(country, date, population)
 ```
 
-Merge population data with the frequency datasets and calculate per 100k population:
+
+***Merge***:
 
 ```{r}
+pop_2023 <- pop.germany.2023 |> pull(population)
+
 germany_day <- germany_day |>
   mutate(
     n_per100k            = (n            / pop_2023) * 100000,
@@ -328,12 +317,10 @@ germany_year <- germany_year |>
   )
 ```
 
+***Load***:
 
-
-
-## 1.2. load the 
 ```{r}
-out_dir <- here("4. datasets", "4.1. all germany", "1. data")
+out_dir <- here("4. datasets", "4.1. all germany", "1. data", "3")
 
 germany_day     <- read_parquet(file.path(out_dir, "germany_day.parquet"))
 germany_week    <- read_parquet(file.path(out_dir, "germany_week.parquet"))
@@ -341,8 +328,6 @@ germany_month   <- read_parquet(file.path(out_dir, "germany_month.parquet"))
 germany_quarter <- read_parquet(file.path(out_dir, "germany_quarter.parquet"))
 germany_year    <- read_parquet(file.path(out_dir, "germany_year.parquet"))
 ```
-
-
 
 # 2. Shiny app
 > Here I want to show how to generate a Shiny app to look at the data.
@@ -358,6 +343,14 @@ Input data:
 library(shiny)
 library(ggplot2)
 library(dplyr)
+
+out_dir <- here("4. datasets", "4.1. all germany", "1. data", "3")
+
+germany_day     <- read_parquet(file.path(out_dir, "germany_day.parquet"))
+germany_week    <- read_parquet(file.path(out_dir, "germany_week.parquet"))
+germany_month   <- read_parquet(file.path(out_dir, "germany_month.parquet"))
+germany_quarter <- read_parquet(file.path(out_dir, "germany_quarter.parquet"))
+germany_year    <- read_parquet(file.path(out_dir, "germany_year.parquet"))
 
 # normalise date column name across all frequencies
 dfs <- list(
