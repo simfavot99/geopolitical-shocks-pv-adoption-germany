@@ -1,0 +1,487 @@
+---
+title: "Previous-years comparison (v2) — Germany & federal states"
+subtitle: "Is the 2026 surge in balcony-PV registrations really an outlier? When does it start?"
+date: today
+format:
+  pdf:
+    toc: true
+    toc-depth: 3
+    fig-width: 9
+    fig-height: 5.5
+    geometry:
+      - margin=1.6cm
+    fig-pos: "H"
+    include-in-header:
+      text: |
+        \usepackage{float}
+  html:
+    toc: true
+    toc-depth: 3
+    code-fold: true
+    fig-width: 10
+    fig-height: 6
+    embed-resources: true
+execute:
+  warning: false
+  message: false
+  echo: false
+---
+
+> All charts overlay **2026 (red)** on **prior years (blue palette, light → dark)**. Data run through **2026-05-07**, so all year-on-year comparisons are restricted to the same Jan – early-May window.
+
+# 1. Setup & event table
+
+```{r setup}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here, arrow, dplyr, tidyr, lubridate, stringr, ggplot2, scales,
+  data.table, purrr, forcats, ggrepel
+)
+
+theme_set(
+  theme_minimal(base_size = 11) +
+    theme(
+      panel.grid.minor = element_blank(),
+      plot.title.position = "plot",
+      plot.title = element_text(face = "bold"),
+      plot.subtitle = element_text(colour = "grey30"),
+      legend.position = "top",
+      legend.title = element_blank(),
+      strip.text = element_text(face = "bold")
+    )
+)
+
+# Iran war 2026 milestones (curated from the project's _milestones.qmd)
+iran_milestones <- tibble::tribble(
+  ~date,                  ~label,                                ~primary,
+  as.Date("2026-01-08"),  "Iran protest crackdown peak",         FALSE,
+  as.Date("2026-02-14"),  "US military buildup",                 FALSE,
+  as.Date("2026-02-28"),  "War begins / Hormuz closed",          TRUE,
+  as.Date("2026-03-18"),  "Major escalation",                    TRUE,
+  as.Date("2026-04-08"),  "Temporary 2-week ceasefire",          TRUE
+)
+
+# Map any Date to a "fake" date in year 2000 so calendar position
+# can be plotted on a single x-axis across years.
+to_doy_date <- function(d) {
+  d <- as.Date(d)
+  as.Date(sprintf("2000-%02d-%02d", month(d), day(d)))
+}
+
+# Distinctive palette: sequential blues for 2022–2025, red for 2026.
+year_palette <- c(
+  "2022" = "#9ecae1",
+  "2023" = "#4292c6",
+  "2024" = "#08519c",
+  "2025" = "#08306b",
+  "2026" = "#d62728"
+)
+
+ma7 <- function(x) data.table::frollmean(x, 7, align = "right", na.rm = TRUE)
+```
+
+```{r load-data}
+out_g <- here("4. datasets", "4.1. all germany", "1. data", "3")
+germany_day   <- read_parquet(file.path(out_g, "germany_day.parquet"))
+germany_week  <- read_parquet(file.path(out_g, "germany_week.parquet"))
+
+out_s <- here("4. datasets", "4.2. federal state", "1. data", "3")
+state_day  <- read_parquet(file.path(out_s, "state_day.parquet"))
+state_week <- read_parquet(file.path(out_s, "state_week.parquet"))
+
+last_day <- max(germany_day$date.registration.day)
+last_doy <- to_doy_date(last_day)
+```
+
+```{r event-table}
+iran_milestones |>
+  mutate(
+    date     = format(date, "%d %b %Y"),
+    primary  = ifelse(primary, "yes", "no")
+  ) |>
+  rename(`Date` = date, `Event` = label, `Primary?` = primary) |>
+  knitr::kable(caption = "Iran war 2026 — events used in this report.")
+```
+
+```{r milestone-helpers}
+# Vertical lines + event labels (rotated) reused in calendar-overlay charts.
+# Both lines and labels are black.
+milestone_layers <- function(label_size = 3.0) {
+  ml <- iran_milestones |>
+    mutate(d = to_doy_date(date),
+           lt = ifelse(primary, "solid", "dotted"))
+  list(
+    geom_vline(data = ml, aes(xintercept = d, linetype = lt),
+               colour = "black", alpha = 0.7, linewidth = 0.45,
+               show.legend = FALSE),
+    scale_linetype_identity(),
+    geom_text(data = ml,
+              aes(x = d, y = Inf, label = label),
+              inherit.aes = FALSE,
+              hjust = 1.02, vjust = -0.4,
+              size = label_size, colour = "black", angle = 90,
+              fontface = "bold")
+  )
+}
+```
+
+---
+
+# 2. Figure 1 — local view around each war date (anticipation diagnostic)
+
+> Outcome: **daily new balcony-PV registrations per 100k** in a **±21-day window** around each event (day 0 = event). Grey bars = raw daily counts; red line = centred 7-day moving average ($\bar n_t^{(7)} = \frac{1}{7}\sum_{k=-3}^{3} n_{t+k}$). The vertical dashed line marks day 0.
+> Reading guide: if the red line is already rising in the negative-day region (left of the dashed line), that is an **anticipation** signal.
+
+```{r fig1-local-events, fig.height=8, fig.width=11}
+window_days <- 21
+
+daily_balcony <- germany_day |>
+  filter(solar_category == "Balcony PVs") |>
+  select(date = date.registration.day, n_per100k)
+
+event_windows <- iran_milestones |>
+  rowwise() |>
+  mutate(window = list(seq(date - window_days, date + window_days, by = "day"))) |>
+  ungroup() |>
+  tidyr::unnest(window) |>
+  mutate(rel_day = as.integer(window - date)) |>
+  left_join(daily_balcony, by = c("window" = "date")) |>
+  mutate(
+    n_per100k = tidyr::replace_na(n_per100k, 0),
+    event_label = sprintf("%s — %s",
+                          format(date, "%d %b %Y"),
+                          label)
+  ) |>
+  group_by(event_label, date) |>
+  arrange(rel_day, .by_group = TRUE) |>
+  mutate(ma7c = data.table::frollmean(n_per100k, 7, align = "center", na.rm = TRUE)) |>
+  ungroup() |>
+  mutate(event_label = forcats::fct_reorder(event_label, date))
+
+ggplot(event_windows, aes(x = rel_day)) +
+  geom_col(aes(y = n_per100k), fill = "grey55", alpha = 0.7, width = 1) +
+  geom_line(aes(y = ma7c), colour = "#d62728", linewidth = 1.0) +
+  geom_vline(xintercept = 0, colour = "black",
+             linetype = "dashed", linewidth = 0.5) +
+  facet_wrap(~ event_label, ncol = 2, scales = "free_y") +
+  scale_x_continuous(breaks = seq(-window_days, window_days, by = 7)) +
+  labs(
+    title = "Figure 1 — Daily balcony-PV registrations around each war milestone",
+    subtitle = sprintf("Germany. ±%d days around event (day 0 = event). Grey bars = raw daily; red line = centred 7-day MA.",
+                       window_days),
+    x = "Days relative to event",
+    y = "Balcony PVs / 100k (per day)"
+  )
+```
+
+---
+
+# 3. Figure 2 — Germany year-to-date totals (Jan – early May)
+
+> Outcome: number of new registrations from 1 January to `r format(last_day, "%d %B")` of each year, per 100k inhabitants. Like-for-like window across years.
+
+```{r fig2-ytd-bars, fig.height=4.2}
+ytd <- germany_day |>
+  mutate(year = year(date.registration.day),
+         mmdd = format(date.registration.day, "%m-%d")) |>
+  filter(year >= 2022, mmdd <= format(last_day, "%m-%d")) |>
+  group_by(solar_category, year) |>
+  summarise(n = sum(n), n_per100k = sum(n_per100k), .groups = "drop")
+
+ggplot(ytd, aes(x = factor(year), y = n_per100k,
+                fill = factor(year) == "2026")) +
+  geom_col(width = 0.7) +
+  geom_text(aes(label = scales::comma(round(n_per100k, 1))),
+            vjust = -0.4, size = 3.2) +
+  facet_wrap(~ solar_category, scales = "free_y") +
+  scale_fill_manual(values = c(`FALSE` = "grey60", `TRUE` = "#d62728"),
+                    guide = "none") +
+  scale_y_continuous(expand = expansion(mult = c(0, 0.15))) +
+  labs(
+    title = sprintf("Figure 2 — Year-to-date registrations through %s, by year",
+                    format(last_day, "%d %B")),
+    subtitle = "Outcome: number of new registrations per 100k inhabitants (Germany)",
+    x = NULL, y = "Registrations / 100k (Jan–early May)"
+  )
+```
+
+---
+
+# 4. Daily registrations, calendar overlay across years
+
+## Figure 3.1 — Balcony PVs, 7-day moving average
+
+> Outcome: 7-day moving average of daily new balcony-PV registrations, per 100k.
+> Formula: $\bar n_t^{(7)} = \frac{1}{7}\sum_{k=0}^{6} n_{t-k}$ (right-aligned).
+> Vertical lines = Iran-war milestones, labelled.
+
+```{r fig3-1-daily-balcony, fig.height=6}
+df_day <- germany_day |>
+  filter(solar_category == "Balcony PVs",
+         year(date.registration.day) >= 2022) |>
+  arrange(date.registration.day) |>
+  mutate(year = factor(year(date.registration.day))) |>
+  group_by(year) |>
+  mutate(n_per100k_ma7 = ma7(n_per100k)) |>
+  ungroup() |>
+  mutate(doy_date = to_doy_date(date.registration.day)) |>
+  filter(doy_date <= last_doy)
+
+# Last in-window point per year, for the end-of-line year label
+end_labels_31 <- df_day |>
+  filter(!is.na(n_per100k_ma7)) |>
+  group_by(year) |>
+  slice_max(doy_date, n = 1) |>
+  ungroup()
+
+ggplot(df_day, aes(x = doy_date, y = n_per100k_ma7,
+                   colour = year, linewidth = year == "2026")) +
+  geom_line() +
+  milestone_layers() +
+  ggrepel::geom_text_repel(
+    data = end_labels_31,
+    aes(label = year, colour = year),
+    direction = "y", hjust = 0, nudge_x = 4,
+    segment.size = 0.2, segment.alpha = 0.5,
+    box.padding = 0.15, point.padding = 0.1,
+    size = 3.4, fontface = "bold", show.legend = FALSE
+  ) +
+  scale_colour_manual(values = year_palette, guide = "none") +
+  scale_linewidth_manual(values = c(`FALSE` = 0.95, `TRUE` = 1.6),
+                         guide = "none") +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b",
+               limits = c(as.Date("2000-01-01"), last_doy + 12),
+               expand = expansion(mult = c(0.01, 0.02))) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(
+    title = "Figure 3.1 — Balcony PVs: daily new registrations (7-day MA), Jan–early May overlay",
+    subtitle = "Germany. 2026 (red) vs 2022–2025 (blue palette, light → dark). Per 100k inhabitants.",
+    x = NULL, y = "Balcony PVs / 100k (7-day MA)"
+  )
+```
+
+## Figure 3.2 — Non-balcony PVs, 7-day moving average (control)
+
+```{r fig3-2-daily-nonbalcony, fig.height=6}
+df_day_nb <- germany_day |>
+  filter(solar_category == "Non-balcony PVs",
+         year(date.registration.day) >= 2022) |>
+  arrange(date.registration.day) |>
+  mutate(year = factor(year(date.registration.day))) |>
+  group_by(year) |>
+  mutate(n_per100k_ma7 = ma7(n_per100k)) |>
+  ungroup() |>
+  mutate(doy_date = to_doy_date(date.registration.day)) |>
+  filter(doy_date <= last_doy)
+
+end_labels_32 <- df_day_nb |>
+  filter(!is.na(n_per100k_ma7)) |>
+  group_by(year) |>
+  slice_max(doy_date, n = 1) |>
+  ungroup()
+
+ggplot(df_day_nb, aes(x = doy_date, y = n_per100k_ma7,
+                      colour = year, linewidth = year == "2026")) +
+  geom_line() +
+  milestone_layers() +
+  ggrepel::geom_text_repel(
+    data = end_labels_32,
+    aes(label = year, colour = year),
+    direction = "y", hjust = 0, nudge_x = 4,
+    segment.size = 0.2, segment.alpha = 0.5,
+    box.padding = 0.15, point.padding = 0.1,
+    size = 3.4, fontface = "bold", show.legend = FALSE
+  ) +
+  scale_colour_manual(values = year_palette, guide = "none") +
+  scale_linewidth_manual(values = c(`FALSE` = 0.95, `TRUE` = 1.6),
+                         guide = "none") +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b",
+               limits = c(as.Date("2000-01-01"), last_doy + 12),
+               expand = expansion(mult = c(0.01, 0.02))) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(
+    title = "Figure 3.2 — Non-balcony PVs: daily new registrations (7-day MA), Jan–early May overlay",
+    subtitle = "Germany. Control series: shock should be much weaker or absent here.",
+    x = NULL, y = "Non-balcony PVs / 100k (7-day MA)"
+  )
+```
+
+## Figure 3.3 — Balcony PVs, raw daily registrations (no smoothing)
+
+> Same overlay as 3.1 but using the **raw daily count** instead of the 7-day MA. Noisier but honest — every spike is a real day.
+
+```{r fig3-3-daily-balcony-raw, fig.height=6}
+end_labels_33 <- df_day |>
+  filter(!is.na(n_per100k)) |>
+  group_by(year) |>
+  slice_max(doy_date, n = 1) |>
+  ungroup()
+
+ggplot(df_day, aes(x = doy_date, y = n_per100k,
+                   colour = year, linewidth = year == "2026",
+                   alpha = year == "2026")) +
+  geom_line() +
+  milestone_layers() +
+  ggrepel::geom_text_repel(
+    data = end_labels_33,
+    aes(label = year, colour = year),
+    direction = "y", hjust = 0, nudge_x = 4,
+    segment.size = 0.2, segment.alpha = 0.5,
+    box.padding = 0.15, point.padding = 0.1,
+    size = 3.4, fontface = "bold", alpha = 1, show.legend = FALSE
+  ) +
+  scale_colour_manual(values = year_palette, guide = "none") +
+  scale_linewidth_manual(values = c(`FALSE` = 0.55, `TRUE` = 1.0),
+                         guide = "none") +
+  scale_alpha_manual(values = c(`FALSE` = 0.55, `TRUE` = 1.0),
+                     guide = "none") +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b",
+               limits = c(as.Date("2000-01-01"), last_doy + 12),
+               expand = expansion(mult = c(0.01, 0.02))) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(
+    title = "Figure 3.3 — Balcony PVs: raw daily new registrations, Jan–early May overlay",
+    subtitle = "Germany. Raw daily counts, no smoothing. Per 100k inhabitants.",
+    x = NULL, y = "Balcony PVs / 100k (per day)"
+  )
+```
+
+---
+
+# 5. Figure 6 — Germany cumulative year-to-date
+
+> Outcome: cumulative number of new balcony-PV registrations per 100k, reset on 1 January of each year. The day where the 2026 line breaks away from the prior-year lines marks the start of the cumulative deviation.
+
+```{r fig6-cumulative, fig.height=6}
+df_cum <- germany_day |>
+  filter(solar_category == "Balcony PVs",
+         year(date.registration.day) >= 2022) |>
+  arrange(date.registration.day) |>
+  mutate(year = factor(year(date.registration.day))) |>
+  group_by(year) |>
+  mutate(cum_per100k_ytd = cumsum(n_per100k)) |>
+  ungroup() |>
+  mutate(doy_date = to_doy_date(date.registration.day)) |>
+  filter(doy_date <= last_doy)
+
+ggplot(df_cum, aes(x = doy_date, y = cum_per100k_ytd,
+                   colour = year, linewidth = year == "2026")) +
+  geom_line() +
+  milestone_layers() +
+  scale_colour_manual(values = year_palette) +
+  scale_linewidth_manual(values = c(`FALSE` = 0.95, `TRUE` = 1.6),
+                         guide = "none") +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b",
+               limits = c(as.Date("2000-01-01"), last_doy),
+               expand = expansion(mult = c(0.01, 0.02))) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(
+    title = "Figure 6 — Balcony PVs: cumulative year-to-date registrations",
+    subtitle = "Germany. Counter resets on 1 January each year. Per 100k inhabitants.",
+    x = NULL, y = "Cumulative balcony PVs / 100k (YTD)"
+  )
+```
+
+---
+
+# 6. Figure 7 — Germany weekly view (less noise)
+
+> Outcome: number of weekly new balcony-PV registrations per 100k. Smoother than daily; easier to read off the post-war jump.
+
+```{r fig7-weekly, fig.height=6}
+df_w <- germany_week |>
+  filter(solar_category == "Balcony PVs",
+         year(date.registration.week) >= 2022) |>
+  mutate(year     = factor(year(date.registration.week)),
+         doy_date = to_doy_date(date.registration.week)) |>
+  filter(doy_date <= last_doy)
+
+ggplot(df_w, aes(x = doy_date, y = n_per100k,
+                 colour = year, linewidth = year == "2026")) +
+  geom_line() +
+  geom_point(data = subset(df_w, year == "2026"), size = 1.3) +
+  milestone_layers() +
+  scale_colour_manual(values = year_palette) +
+  scale_linewidth_manual(values = c(`FALSE` = 0.95, `TRUE` = 1.6),
+                         guide = "none") +
+  scale_x_date(date_breaks = "2 weeks", date_labels = "%d %b",
+               limits = c(as.Date("2000-01-01"), last_doy),
+               expand = expansion(mult = c(0.01, 0.02))) +
+  theme(axis.text.x = element_text(angle = 30, hjust = 1)) +
+  labs(
+    title = "Figure 7 — Balcony PVs: weekly new registrations, Jan–early May overlay",
+    subtitle = "Germany. Per 100k inhabitants.",
+    x = NULL, y = "Balcony PVs / 100k (per week)"
+  )
+```
+
+---
+
+# 7. Federal-state heterogeneity
+
+## Figure 8.1 — Weekly registrations per 100k, by federal state
+
+> Same calendar overlay as Figure 7 but faceted across the 16 federal states. Larger linewidths to distinguish each year.
+
+```{r fig81-state-weekly, fig.height=11, fig.width=12}
+df_sw <- state_week |>
+  filter(solar_category == "Balcony PVs",
+         year(date.registration.week) >= 2022) |>
+  mutate(year     = factor(year(date.registration.week)),
+         doy_date = to_doy_date(date.registration.week)) |>
+  filter(doy_date <= last_doy)
+
+ggplot(df_sw, aes(x = doy_date, y = n_per100k,
+                  colour = year, linewidth = year == "2026")) +
+  geom_line() +
+  geom_vline(data = iran_milestones |> filter(primary) |>
+               mutate(d = to_doy_date(date)),
+             aes(xintercept = d), colour = "black",
+             alpha = 0.7, linetype = "solid", linewidth = 0.4) +
+  facet_wrap(~ FederalState.names, ncol = 4, scales = "free_y") +
+  scale_colour_manual(values = year_palette) +
+  scale_linewidth_manual(values = c(`FALSE` = 0.8, `TRUE` = 1.3),
+                         guide = "none") +
+  scale_x_date(date_breaks = "2 months", date_labels = "%b",
+               limits = c(as.Date("2000-01-01"), last_doy)) +
+  theme(axis.text.x = element_text(angle = 0, size = 7),
+        axis.text.y = element_text(size = 7),
+        strip.text = element_text(size = 8)) +
+  labs(
+    title = "Figure 8.1 — Balcony PVs: weekly registrations per 100k, by federal state",
+    subtitle = "2026 (red) vs 2022–2025. Black verticals = primary events: war start (28 Feb), major escalation (18 Mar), ceasefire (8 Apr).",
+    x = NULL, y = "Balcony PVs / 100k (per week)"
+  )
+```
+
+## Figure 8.3 — Year-to-date totals by federal state and year
+
+```{r fig83-state-ytd-bars, fig.height=4.6, fig.width=12}
+ytd_state <- state_day |>
+  filter(solar_category == "Balcony PVs") |>
+  mutate(year = year(date.registration.day),
+         mmdd = format(date.registration.day, "%m-%d")) |>
+  filter(year >= 2022, mmdd <= format(last_day, "%m-%d")) |>
+  group_by(FederalState.names, year) |>
+  summarise(n_per100k = sum(n_per100k), .groups = "drop")
+
+order_fs <- ytd_state |>
+  filter(year == 2026) |>
+  arrange(desc(n_per100k)) |>
+  pull(FederalState.names)
+
+ytd_state |>
+  mutate(FederalState.names = factor(FederalState.names, levels = order_fs)) |>
+  ggplot(aes(x = FederalState.names, y = n_per100k,
+             fill = factor(year))) +
+  geom_col(position = position_dodge(width = 0.8), width = 0.75) +
+  scale_fill_manual(values = year_palette) +
+  theme(axis.text.x = element_text(angle = 35, hjust = 1)) +
+  labs(
+    title = sprintf("Figure 8.3 — Balcony PVs: Jan–%s YTD registrations per 100k, by federal state and year",
+                    format(last_day, "%d %b")),
+    subtitle = "States ordered by 2026 intensity (highest left).",
+    x = NULL, y = "Balcony PVs / 100k (Jan–early May)"
+  )
+```
+
