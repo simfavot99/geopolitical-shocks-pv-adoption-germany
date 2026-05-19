@@ -17,8 +17,11 @@ pacman::p_load(
   here,        # here()
   arrow,       # read_parquet()
   dplyr,       # glimpse(), filter(), arrange(), count()
+  tibble,      # tribble()
   lubridate,   # year()
-  ggplot2      # ggplot(), geom_col(), facet_wrap()
+  ggplot2,     # ggplot(), geom_line(), facet_wrap()
+  ggiraph,     # geom_line_interactive(), girafe()
+  shiny        # shinyApp(), fluidPage(), sliderInput()
 )
 ```
 
@@ -142,5 +145,191 @@ ggplot(state_year,
 Here I want to create a shiny app where you can select the following options:
 - the frequency (from daily to yearly)
 - option whether to dispaly the verticla lines for relevant dates of Iran war (somewhere place the dates)
+- slider to decide the time range
+- option to select whether to show balcony PVs, non-balcony PVs or both
 
-The shiny app will show the facet wrap fo all federal states
+Other things:
+- always use the population adjusted series
+- make the line interactive using ggiraph package
+- for the daily frequency, show a MA of 7 days + daily series in the background in grey, less visibile
+
+The shiny app will show the facet wrap fo all federal states.
+
+Shiny app:
+
+```{r}
+# --- one row per frequency: which dataset to use + its date column ----------
+freq_map <- list(
+  Daily     = list(df = state_day,     date_col = "date.registration.day"),
+  Weekly    = list(df = state_week,    date_col = "date.registration.week"),
+  Monthly   = list(df = state_month,   date_col = "date.registration.month"),
+  Quarterly = list(df = state_quarter, date_col = "date.registration.quarter"),
+  Yearly    = list(df = state_year,    date_col = "date.registration.year")
+)
+
+iran_milestones <- tribble(
+  ~date,                  ~label,
+  as.Date("2026-02-28"),  "War begins / Hormuz closed",
+  as.Date("2026-03-18"),  "Major escalation",
+  as.Date("2026-04-08"),  "Temporary 2-week ceasefire"
+)
+
+# global date range (taken from the finest grain so the slider spans everything)
+date_range_global <- range(state_day$date.registration.day, na.rm = TRUE)
+
+ui <- fluidPage(
+  titlePanel("Balcony / non-balcony PV registrations per 100k inhabitants — federal states"),
+  sidebarLayout(
+    sidebarPanel(
+      width = 3,
+      radioButtons("freq", "Frequency",
+                   choices  = names(freq_map),
+                   selected = "Monthly",
+                   inline   = TRUE),
+      sliderInput("dates", "Date range",
+                  min        = date_range_global[1],
+                  max        = date_range_global[2],
+                  value      = date_range_global,
+                  timeFormat = "%b %Y",
+                  width      = "100%"),
+      checkboxGroupInput("cats", "Solar category",
+                         choices  = c("Balcony PVs", "Non-balcony PVs"),
+                         selected = c("Balcony PVs", "Non-balcony PVs"),
+                         inline   = TRUE),
+      checkboxInput("show_lines",
+                    "Show Iran-war milestone lines",
+                    value = TRUE),
+      tags$div(
+        style = "font-size: 12px; line-height: 1.4; margin-top: 10px;",
+        tags$b("Iran-war 2026 milestones:"),
+        tags$ul(
+          style = "padding-left: 18px; margin-top: 4px;",
+          tags$li(tags$b("28 Feb 2026"), " — War begins / Hormuz closed"),
+          tags$li(tags$b("18 Mar 2026"), " — Major escalation"),
+          tags$li(tags$b("08 Apr 2026"), " — Temporary 2-week ceasefire")
+        )
+      )
+    ),
+    mainPanel(
+      width = 9,
+      girafeOutput("plot", height = "780px")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+
+  # pick the right per-frequency dataset and normalise its date column to `date`
+  plot_df <- reactive({
+    req(input$cats)
+    spec <- freq_map[[input$freq]]
+    df   <- spec$df
+    df$date <- df[[spec$date_col]]
+    df |>
+      filter(solar_category %in% input$cats,
+             date >= input$dates[1],
+             date <= input$dates[2])
+  })
+
+  output$plot <- renderGirafe({
+    df <- plot_df()
+    req(nrow(df) > 0)
+
+    is_daily <- input$freq == "Daily"
+
+    # at daily frequency, compute a centred 7-day MA per (state × category)
+    if (is_daily) {
+      df <- df |>
+        arrange(FederalState.names, solar_category, date) |>
+        group_by(FederalState.names, solar_category) |>
+        mutate(n_per100k_ma7 = as.numeric(
+          stats::filter(n_per100k, rep(1 / 7, 7), sides = 2)
+        )) |>
+        ungroup()
+    }
+
+    p <- ggplot(df,
+                aes(x = date,
+                    colour = solar_category,
+                    group  = solar_category)) +
+      facet_wrap(~ FederalState.names, scales = "free_y", ncol = 4) +
+      scale_colour_manual(values = c("Balcony PVs"     = "#d95f02",
+                                     "Non-balcony PVs" = "#1b9e77")) +
+      labs(x = NULL,
+           y = "Registrations per 100k inhabitants",
+           colour = NULL) +
+      theme_minimal(base_size = 10) +
+      theme(legend.position = "bottom",
+            axis.text.x     = element_text(angle = 45, hjust = 1))
+
+    if (is_daily) {
+      # raw daily noise in the background (no tooltip) + 7-day MA on top
+      p <- p +
+        geom_line(aes(y = n_per100k),
+                  colour     = "grey75",
+                  linewidth  = 0.25,
+                  alpha      = 0.7,
+                  show.legend = FALSE) +
+        geom_line_interactive(
+          data = df |> filter(!is.na(n_per100k_ma7)),
+          aes(y       = n_per100k_ma7,
+              tooltip = sprintf("%s — %s\n%s: %.2f per 100k (7-day MA)",
+                                FederalState.names,
+                                format(date, "%Y-%m-%d"),
+                                solar_category,
+                                n_per100k_ma7),
+              data_id = solar_category),
+          linewidth = 0.6
+        )
+    } else {
+      p <- p +
+        geom_line_interactive(
+          aes(y       = n_per100k,
+              tooltip = sprintf("%s — %s\n%s: %.2f per 100k",
+                                FederalState.names,
+                                format(date, "%Y-%m-%d"),
+                                solar_category,
+                                n_per100k),
+              data_id = solar_category),
+          linewidth = 0.5
+        ) +
+        geom_point_interactive(
+          aes(y       = n_per100k,
+              tooltip = sprintf("%s — %s\n%s: %.2f per 100k",
+                                FederalState.names,
+                                format(date, "%Y-%m-%d"),
+                                solar_category,
+                                n_per100k),
+              data_id = solar_category),
+          size = 0.9
+        )
+    }
+
+    if (isTRUE(input$show_lines)) {
+      ml <- iran_milestones |>
+        filter(date >= input$dates[1], date <= input$dates[2])
+      if (nrow(ml) > 0) {
+        p <- p +
+          geom_vline(data = ml,
+                     aes(xintercept = date),
+                     colour    = "black",
+                     linewidth = 0.4,
+                     linetype  = "dashed",
+                     inherit.aes = FALSE)
+      }
+    }
+
+    girafe(
+      ggobj      = p,
+      width_svg  = 12,
+      height_svg = 8,
+      options    = list(
+        opts_hover(css = "stroke-width:1.6;"),
+        opts_tooltip(css = "background:#222;color:#fff;padding:4px 6px;border-radius:3px;font-size:11px;")
+      )
+    )
+  })
+}
+
+shinyApp(ui, server)
+```
