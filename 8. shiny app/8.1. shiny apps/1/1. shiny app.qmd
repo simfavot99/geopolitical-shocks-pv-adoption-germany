@@ -1,0 +1,296 @@
+---
+title: 'Shiny app 1 — Balcony PVs across federal states'
+format: html
+---
+
+
+> Map of balcony-PV adoption per federal state (population-adjusted) with a
+> time slider, paired with a Germany-wide time series of balcony-PV
+> registrations and vertical markers for the 2026 Iran-war milestones.
+
+# 0. Libraries
+
+```{r}
+if (!require("pacman")) install.packages("pacman")
+pacman::p_load(
+  here,        # here()
+  arrow,       # read_parquet()
+  sfarrow,     # st_read_parquet()
+  sf,          # st_transform(), st_as_sf()
+  dplyr,       # rename, mutate, filter, left_join, group_by, summarise
+  tibble,      # tribble()
+  lubridate,   # floor_date()
+  shiny,       # shinyApp(), fluidPage(), sliderInput()
+  leaflet,     # leaflet(), addPolygons(), colorNumeric()
+  ggplot2      # ggplot(), geom_line(), geom_vline()
+)
+```
+
+
+# 1. Load and prepare the data
+
+Per-frequency parquet files produced by
+[4. datasets/4.2. federal state/2. report/3. dataset.qmd](../../../4.%20datasets/4.2.%20federal%20state/2.%20report/3.%20dataset.qmd).
+Each file already contains `n`, `n_cumulative`, `n_per100k`,
+`n_cumulative_per100k` (per 100 000 inhabitants, 2023 population). In this
+chunk we also load the federal-state boundaries, define the Iran-war
+milestones, and pre-compute the fixed colour-scale domain.
+
+**Frequency choice.**
+
+*Map (slider) — monthly.* The Iran-war milestones (28 Feb / 18 Mar / 8 Apr
+2026) sit in three distinct months, so a monthly slider exposes the impact
+one month at a time. Weekly would yield a very noisy choropleth (several
+small states show 0–2 balcony registrations in any given week per 100 000
+inhabitants), and quarterly collapses the entire war into one or two slider
+positions.
+
+*Time-series plot — weekly.* Aggregating to weekly is smooth enough to read
+while still letting the three milestone dates fall into separate bars,
+which would not be possible at monthly frequency.
+
+```{r}
+# --- federal-state PV data (weekly + monthly) -------------------------------
+out_dir <- here("4. datasets", "4.2. federal state", "1. data", "3")
+
+state_week  <- read_parquet(file.path(out_dir, "state_week.parquet"))
+state_month <- read_parquet(file.path(out_dir, "state_month.parquet"))
+
+state_week_b <- state_week |>
+  filter(solar_category == "Balcony PVs") |>
+  rename(date = date.registration.week)
+
+state_month_b <- state_month |>
+  filter(solar_category == "Balcony PVs") |>
+  rename(date = date.registration.month)
+
+# --- federal-state boundaries -----------------------------------------------
+fs_map <- st_read_parquet(here("6. Maps", "6.1. Dataset", "federalState.parquet")) |>
+  st_transform(4326)   # leaflet wants WGS84
+
+# --- Iran-war milestones (vertical markers on the time-series plot) ---------
+iran_milestones <- tibble::tribble(
+  ~date,                  ~label,
+  as.Date("2026-02-28"),  "War begins / Hormuz closed",
+  as.Date("2026-03-18"),  "Major escalation",
+  as.Date("2026-04-08"),  "Temporary 2-week ceasefire"
+)
+
+# --- fixed colour-scale domain so all slider positions are comparable -------
+# one maximum per metric (per-period vs cumulative); the chosen one is used
+# as the colour-scale domain so colours stay comparable across slider steps.
+global_max_period <- max(state_month_b$n_per100k,            na.rm = TRUE)
+global_max_cum    <- max(state_month_b$n_cumulative_per100k, na.rm = TRUE)
+months_seq        <- sort(unique(state_month_b$date))
+```
+
+
+# 2. Shiny app
+
+```{r}
+ui <- fluidPage(
+  titlePanel("Balcony-PV adoption across German federal states"),
+  tags$p(
+    style = "font-size: 13px; color: #555; margin-top: -8px;",
+    tags$b("Note: "),
+    "values shown on the map are balcony PV registrations ",
+    tags$i("per 100 000 inhabitants"),
+    " (2023 federal-state population). The colour scale is fixed across all ",
+    "slider positions so periods are visually comparable."
+  ),
+  fluidRow(
+    column(6,
+      sliderInput("month_pick", "Month displayed on the map",
+                  min       = min(months_seq),
+                  max       = max(months_seq),
+                  value     = max(months_seq),
+                  timeFormat = "%b %Y",
+                  step      = 31,
+                  animate   = animationOptions(interval = 700),
+                  width     = "100%"),
+      radioButtons("map_mode", NULL,
+                   choices  = c("Registrations in the selected month" = "period",
+                                "Cumulative registrations up to the selected month" = "cum"),
+                   selected = "period",
+                   inline   = TRUE),
+      leafletOutput("map", height = 560)
+    ),
+    column(6,
+      tags$h4("Balcony PVs over time — one line per federal state (weekly)"),
+      fluidRow(
+        column(4,
+          checkboxInput("show_lines",
+                        "Show Iran-war milestone lines",
+                        value = TRUE)
+        ),
+        column(8,
+          sliderInput("ts_range", "Date range",
+                      min   = min(state_week_b$date),
+                      max   = max(state_week_b$date),
+                      value = c(min(state_week_b$date),
+                                max(state_week_b$date)),
+                      timeFormat = "%b %Y",
+                      width = "100%")
+        )
+      ),
+      selectizeInput(
+        "ts_states", "Federal states to display",
+        choices  = sort(unique(state_week_b$FederalState.names)),
+        selected = sort(unique(state_week_b$FederalState.names)),
+        multiple = TRUE,
+        width    = "100%",
+        options  = list(
+          placeholder      = "Type to search a federal state…",
+          plugins          = list("remove_button"),
+          closeAfterSelect = FALSE
+        )
+      ),
+      plotOutput("ts", height = 560)
+    )
+  ),
+  tags$div(
+    style = "font-size: 12px; line-height: 1.4; margin-top: 10px;",
+    tags$b("Iran-war 2026 milestones (vertical lines on the plot):"),
+    tags$ul(
+      style = "padding-left: 18px; margin-top: 4px;",
+      tags$li(tags$b("28 Feb 2026"), " — War begins / Strait of Hormuz closed"),
+      tags$li(tags$b("18 Mar 2026"), " — Major escalation"),
+      tags$li(tags$b("08 Apr 2026"), " — Temporary 2-week ceasefire")
+    )
+  )
+)
+
+server <- function(input, output, session) {
+
+  # snap the slider to the nearest available month in months_seq
+  selected_month <- reactive({
+    months_seq[ which.min(abs(months_seq - input$month_pick)) ]
+  })
+
+  # palette + scale specs that depend on the cumulative/per-period toggle.
+  # Domain is fixed across all slider positions (per metric) so colours stay
+  # comparable from one month to the next.
+  map_spec <- reactive({
+    if (input$map_mode == "cum") {
+      list(
+        col      = "n_cumulative_per100k",
+        max      = global_max_cum,
+        legend_t = "Cumulative balcony PVs<br/>per 100k pop.<br/>(up to month shown)",
+        label_t  = "%.2f cumulative balcony PVs per 100k inhabitants"
+      )
+    } else {
+      list(
+        col      = "n_per100k",
+        max      = global_max_period,
+        legend_t = "Balcony PVs<br/>per 100k pop.<br/>(in month shown)",
+        label_t  = "%.2f balcony PVs per 100k inhabitants (this month)"
+      )
+    }
+  })
+
+  pal <- reactive({
+    colorNumeric("YlOrRd", domain = c(0, map_spec()$max), na.color = "#eeeeee")
+  })
+
+  # static base map (rendered once — tiles + bounds only)
+  output$map <- renderLeaflet({
+    leaflet(fs_map) |>
+      addProviderTiles(providers$CartoDB.Positron) |>
+      fitBounds(
+        lng1 = as.numeric(st_bbox(fs_map)["xmin"]),
+        lat1 = as.numeric(st_bbox(fs_map)["ymin"]),
+        lng2 = as.numeric(st_bbox(fs_map)["xmax"]),
+        lat2 = as.numeric(st_bbox(fs_map)["ymax"])
+      )
+  })
+
+  # redraw the legend whenever the mode (= palette) changes
+  observe({
+    spec <- map_spec()
+    leafletProxy("map") |>
+      clearControls() |>
+      addLegend(
+        position = "bottomright",
+        pal      = pal(),
+        values   = c(0, spec$max),
+        title    = spec$legend_t,
+        opacity  = 0.9
+      )
+  })
+
+  # update polygons whenever the slider or mode changes
+  observe({
+    m    <- selected_month()
+    spec <- map_spec()
+
+    slice_df <- state_month_b |>
+      filter(date == m) |>
+      select(FederalStateCode, all_of(spec$col))
+
+    map_data <- fs_map |>
+      left_join(slice_df, by = "FederalStateCode")
+
+    values <- map_data[[spec$col]]
+
+    labels <- sprintf(
+      paste0("<b>%s</b><br/>", spec$label_t),
+      map_data$FederalState,
+      values
+    ) |> lapply(htmltools::HTML)
+
+    leafletProxy("map", data = map_data) |>
+      clearShapes() |>
+      addPolygons(
+        fillColor   = pal()(values),
+        weight      = 1,
+        color       = "#444",
+        fillOpacity = 0.85,
+        label       = labels,
+        highlightOptions = highlightOptions(
+          weight = 2, color = "#000", fillOpacity = 0.95, bringToFront = TRUE
+        )
+      )
+  })
+
+  # weekly time series of balcony PVs per 100k — one line per federal state
+  output$ts <- renderPlot({
+    req(input$ts_states)
+
+    plot_df <- state_week_b |>
+      filter(FederalState.names %in% input$ts_states,
+             date >= input$ts_range[1],
+             date <= input$ts_range[2])
+
+    p <- ggplot(plot_df,
+                aes(date, n_per100k, colour = FederalState.names)) +
+      geom_line(linewidth = 0.45, alpha = 0.85) +
+      labs(x = NULL,
+           y = "Balcony PVs per 100k inhabitants (weekly)",
+           colour = "Federal state") +
+      theme_minimal(base_size = 12) +
+      theme(legend.position = "bottom") +
+      guides(colour = guide_legend(nrow = 4, byrow = TRUE))
+
+    if (isTRUE(input$show_lines)) {
+      ml <- iran_milestones |>
+        filter(date >= input$ts_range[1], date <= input$ts_range[2])
+      if (nrow(ml) > 0) {
+        p <- p +
+          geom_vline(data = ml,
+                     aes(xintercept = date),
+                     colour = "black", linewidth = 0.5,
+                     inherit.aes = FALSE) +
+          geom_text(data = ml,
+                    aes(x = date, y = Inf, label = label),
+                    inherit.aes = FALSE,
+                    hjust = 1.05, vjust = 1.2,
+                    angle = 90, size = 3.2, fontface = "bold")
+      }
+    }
+
+    p
+  })
+}
+
+shinyApp(ui, server)
+```
