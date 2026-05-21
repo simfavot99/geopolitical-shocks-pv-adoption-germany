@@ -5,3 +5,27 @@ format: html
 
 
 
+**Shiny app I want to create**:
+- I want to create a shiny app where on the left there is a map of all municipalities (with federla states bounderies) where you can see the growth rate between the before Iran war begins and after (there must be a slider where you can compute the 'after', and decide if immedietely after the iran war begins or after a while)
+The outcome variable to consider must be the registrations (population adjusted)
+- on the right there must a chart of the daily registration in grey + MA
+Once you seelct on the map one munciipality, it dispays the chart of that specific munciiaplity (from beginning janaury 2026 up to most recent data) of the daily registrations (popuation corrected) on the backgroung in grey + moving average (with a slide to deicde the window)
+As default munciiaplity to show at the beginning, even before seelcting a specific municipality, show the plot for Mannheim municipality
+- in the plot add the vertcial line sin black for the iran war relevant dates
+- there are some municipalities that have no value for population (NA). in this case use the non-adjusted series (but write a little not that the munciiaplity is not population adjusted)
+- create an option where you can decide whether to focs on balcoy PVs or non-balcoy PVs
+
+Here you have the datasets:
+  1. dataset for munciipality bounderies: *8. shiny app\8.1. shiny apps\2\municipalities.parquet*
+  2. dataset for federal states bounderies: *8. shiny app\8.1. shiny apps\2\federalState.parquet*
+  3. the dataset where you cna find the registration is here: *8. shiny app\8.1. shiny apps\2\mun_day.parquet*
+
+Here (*8. shiny app\8.1. shiny apps\2\1. dataset.qmd*) you can find the file i used to create the dataset for the balcony PVs registrations
+
+I want you to create a shiny app, where you include both the user interface and the server in the same chunk.
+
+Shiny app:
+
+```{r}
+
+```

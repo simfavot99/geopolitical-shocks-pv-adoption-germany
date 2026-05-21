@@ -5,6 +5,23 @@ format: html
 
 > Here I want to create the dataset for the municipalities at daily frequency.
 
+**Shiny app I want to create**:
+- I want to create a shiny app where on the left there is a map of all municipalities (with federla states bounderies) where you can see the growth rate between the before Iran war begins and after (there must be a slider where you can compute the 'after', and decide if immedietely after the iran war begins or after a while)
+The outcome variable to consider must be the registrations (population adjusted)
+- on the right there must a chart of the daily registration in grey + MA
+Once you seelct on the map one munciipality, it dispays the chart of that specific munciiaplity (from beginning janaury 2026 up to most recent data) of the daily registrations (popuation corrected) on the backgroung in grey + moving average (with a slide to deicde the window)
+As default munciiaplity to show at the beginning, even before seelcting a specific municipality, show the plot for Mannheim municipality
+- in the plot add the vertcial line sin black for the iran war relevant dates
+- there are some municipalities that have no value for population (NA). in this case use the non-adjusted series (but write a little not that the munciiaplity is not population adjusted)
+- create an option where you can decide whether to focs on balcoy PVs or non-balcoy PVs
+
+Here you have the datasets:
+  1. dataset for munciipality bounderies: *8. shiny app\8.1. shiny apps\2\municipalities.parquet*
+  2. dataset for federal states bounderies: *8. shiny app\8.1. shiny apps\2\federalState.parquet*
+  3. the dataset where you cna find the registration is here: *8. shiny app\8.1. shiny apps\2\mun_day.parquet*
+
+Here (*8. shiny app\8.1. shiny apps\2\1. dataset.qmd*) you can find the file i used to create the dataset for the balcony PVs registrations
+
 
 **Claude chat**: SHINY APP (2)
 
@@ -224,9 +241,6 @@ data <- data |>
                                   "Non-balcony PVs"))
 
 # I want to focus only on the Iran war (so you can discard all the observations before that):
-
-
-iran_war_start <- as.Date("2026-02-28")
 sample_start   <- as.Date("2026-01-01")
 
 data <- data |>
@@ -235,7 +249,7 @@ data <- data |>
 
 ```
 
-Frequencies (daily, weekly, monthly, quarterly, yearly):
+Frequencies (only daily): weekly, monthly, quarterly, yearly:
 
 ```{r}
 mun_day <- data |>
@@ -246,7 +260,11 @@ mun_day <- data |>
            fill = list(n = 0)) |>
   arrange(MunicipalityCode, solar_category, date.registration.day) |>
   group_by(MunicipalityCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
 
+
+Frequencies (weekly, monthly, quarterly, yearly):
+```{r}
 mun_week <- data |>
   group_by(MunicipalityCode, Municipality, solar_category, date.registration.week) |>
   summarise(n = n(), .groups = "drop") |>
@@ -285,16 +303,18 @@ mun_year <- data |>
 ```
 
 
-
-
 **Population**:
 
 ```{r}
-# credentials
+#Credentials:
+# gen_auth_save(database = 'genesis')
+# gen_auth_save(database = 'regio')
+
 gen_logincheck(database = "genesis")
 gen_logincheck(database = "regio")
 
-# dataset
+
+# Load the data:
 pop.muni.2023 <- gen_table(
   name      = "12411-01-01-5",
   database  = "regio",
@@ -302,7 +322,8 @@ pop.muni.2023 <- gen_table(
   startyear = 2023,
   endyear   = 2023
 ) |>
-  filter(is.na(`2_variable_attribute_code`)) |>
+  filter(`1_variable_code` == "GEMEIN",          # municipalities only (drops DINSG/DLAND/REGBEZ/KREISE)
+         is.na(`2_variable_attribute_code`)) |>  # sex total
   select(
     MunicipalityCode = `1_variable_attribute_code`,
     Municipality     = `1_variable_attribute_label`,
@@ -314,45 +335,8 @@ pop.muni.2023 <- gen_table(
     population = suppressWarnings(as.numeric(population))
   ) |>
   select(Municipality, MunicipalityCode, date, population) 
-
-
-
 ```
 
-
-shiny app to check:
-
-```{r}
-pop_choices <- pop.muni.2023 |>
-  distinct(Municipality, MunicipalityCode) |>
-  arrange(Municipality)
-
-shinyApp(
-  ui = fluidPage(
-    titlePanel("Municipality population check"),
-    selectizeInput("mun", "Municipality:",
-                   choices  = NULL,
-                   options  = list(placeholder = "Type to search...")),
-    verbatimTextOutput("info")
-  ),
-  server = function(input, output, session) {
-    updateSelectizeInput(session, "mun",
-                        choices = setNames(pop_choices$MunicipalityCode,
-                                           paste0(pop_choices$Municipality,
-                                                  " (", pop_choices$MunicipalityCode, ")")),
-                        server  = TRUE)
-
-    output$info <- renderPrint({
-      req(input$mun)
-      row <- pop.muni.2023 |> filter(MunicipalityCode == input$mun)
-      cat("Municipality:     ", row$Municipality,     "\n",
-          "MunicipalityCode: ", row$MunicipalityCode, "\n",
-          "Population (2023):", format(row$population, big.mark = ","), "\n",
-          sep = "")
-    })
-  }
-)
-```
 
 **Merging**:
 ```{r}
@@ -365,7 +349,10 @@ mun_day <- mun_day |>
     n_per100k            = (n            / population) * 100000,
     n_cumulative_per100k = (n_cumulative / population) * 100000
   )
+```
 
+Other frequencies:
+```{r}
 mun_week <- mun_week |>
   left_join(pop_lookup, by = "MunicipalityCode") |>
   mutate(
