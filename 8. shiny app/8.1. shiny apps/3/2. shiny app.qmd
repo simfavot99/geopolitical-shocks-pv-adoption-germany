@@ -1,0 +1,223 @@
+---
+title: 'Shiny app for municipalities'
+format: html
+---
+
+
+
+**Shiny app I want to create**:
+- I want to create a shiny app where on the left there is a map of all municipalities (with federla states bounderies) and the outcome variable to consider must be the registrations (population adjusted) cumulative, from the beginning of the sample to the end.
+- on the right there must a chart of the daily registration in grey + MA
+Once you seelct on the map one munciipality, it dispays the chart of that specific munciiaplity (from beginning janaury 2026 up to most recent data) of the daily registrations (popuation corrected) on the backgroung in grey + moving average (with a slide to deicde the window)
+As default munciiaplity to show at the beginning, even before seelcting a specific municipality, show the plot for Mannheim municipality
+- in the plot add the vertcial line sin black for the iran war relevant dates
+- create an option where you can decide whether to focs on balcoy PVs or non-balcoy PVs
+
+Here you have the datasets:
+  1. dataset for munciipality bounderies: *8. shiny app\8.1. shiny apps\3\municipalities.parquet*
+  2. dataset for federal states bounderies: *8. shiny app\8.1. shiny apps\3\federalState.parquet*
+  3. the dataset where you cna find the registration is here: *8. shiny app\8.1. shiny apps\3\mun_day.parquet*
+
+Here (*8. shiny app\8.1. shiny apps\3\1. dataset.qmd*) you can find the file i used to create the dataset for the balcony PVs registrations
+
+I want you to create a shiny app, where you include both the user interface and the server in the same chunk.
+
+Shiny app:
+
+```{r}
+# ============================================================================
+# Municipal PV adoption in Germany — cumulative-registration map + daily chart
+# ============================================================================
+pacman::p_load(shiny, leaflet, sf, sfarrow, arrow, dplyr, ggplot2, here, tibble)
+
+# ---- 0. data ---------------------------------------------------------------
+base_dir <- here("8. shiny app", "8.1. shiny apps", "3")
+
+# municipalities.parquet stores its geometry column as `geom`; federalState
+# as `geometry`. Drop any empty geometries via name-agnostic base subsetting
+# (st_make_valid can leave empties that leaflet::addPolygons cannot read).
+muni_sf <- st_read_parquet(file.path(base_dir, "municipalities.parquet")) |>
+  st_zm(drop = TRUE) |>
+  st_transform(4326) |>
+  st_make_valid() |>
+  st_simplify(dTolerance = 0.0035, preserveTopology = TRUE) |>
+  st_make_valid()
+muni_sf <- muni_sf[!st_is_empty(muni_sf), ]
+
+fs_sf <- st_read_parquet(file.path(base_dir, "federalState.parquet")) |>
+  st_zm(drop = TRUE) |>
+  st_transform(4326) |>
+  st_make_valid()
+fs_sf <- fs_sf[!st_is_empty(fs_sf), ]
+
+mun_day <- read_parquet(file.path(base_dir, "mun_day.parquet")) |>
+  mutate(date.registration.day = as.Date(date.registration.day))
+
+# ---- 1. constants ----------------------------------------------------------
+default_muni <- "08222000"                             # Mannheim
+
+iran_milestones <- tibble::tribble(
+  ~date,                 ~label,
+  as.Date("2026-02-28"), "War begins / Hormuz closed",
+  as.Date("2026-03-06"), "Ras Laffan gas hub shutdown",
+  as.Date("2026-03-17"), "US naval campaign",
+  as.Date("2026-03-21"), "US strikes Natanz",
+  as.Date("2026-04-08"), "Ceasefire"
+)
+
+# colour scale: cumulative registrations per 100k over the whole sample.
+# fixed bins so colours stay comparable when switching PV category.
+cum_bins <- c(0, 50, 100, 150, 200, 300, 450, 700, Inf)
+
+# ---- 2. UI -----------------------------------------------------------------
+ui <- fluidPage(
+  titlePanel("Iran war & municipal PV adoption — Germany"),
+  fluidRow(
+    column(4, radioButtons("category", "PV type:",
+                           choices  = c("Balcony PVs", "Non-balcony PVs"),
+                           selected = "Balcony PVs")),
+    column(8, sliderInput("ma_window", "Moving-average window (days):",
+                          min = 2, max = 30, value = 7, step = 1, width = "100%"))
+  ),
+  helpText(
+    "Map colour = cumulative PV registrations per 100,000 inhabitants over the ",
+    "whole sample (1 Jan – 7 May 2026). Grey = no data. ",
+    "Click a municipality to load its daily series on the right."
+  ),
+  fluidRow(
+    column(6, leafletOutput("map",   height = "640px")),
+    column(6, plotOutput("chart",    height = "640px"))
+  )
+)
+
+# ---- 3. server -------------------------------------------------------------
+server <- function(input, output, session) {
+
+  selected_muni <- reactiveVal(default_muni)
+
+  # data for the chosen PV category
+  cat_data <- reactive({
+    mun_day |> filter(solar_category == input$category)
+  })
+
+  # cumulative registrations per 100k over the whole sample (per municipality)
+  cum_tbl <- reactive({
+    cat_data() |>
+      group_by(MunicipalityCode) |>
+      summarise(cum_per100k = sum(n) / first(population) * 1e5,
+                .groups = "drop")
+  })
+
+  map_data <- reactive({
+    muni_sf |> left_join(cum_tbl(), by = "MunicipalityCode")
+  })
+
+  # base map: tiles + federal-state borders (rendered once)
+  output$map <- renderLeaflet({
+    # default SVG renderer (not preferCanvas) — the canvas renderer fails to
+    # clear hover labels on mouseout, leaving them stuck on the map.
+    leaflet() |>
+      addProviderTiles(providers$CartoDB.Positron) |>
+      setView(lng = 10.45, lat = 51.16, zoom = 6) |>
+      addMapPane("choropleth", zIndex = 410) |>
+      addMapPane("borders",    zIndex = 420) |>
+      addMapPane("highlight",  zIndex = 430) |>
+      addPolygons(data = fs_sf, fill = FALSE, color = "#333333", weight = 1.6,
+                  group = "states", options = pathOptions(pane = "borders"))
+  })
+
+  # choropleth: redrawn when the PV category changes
+  observe({
+    md  <- map_data()
+    pal <- colorBin("YlGn", domain = md$cum_per100k, bins = cum_bins,
+                    na.color = "#cfcfcf")
+
+    leafletProxy("map") |>
+      clearGroup("muni") |>
+      clearControls() |>
+      addPolygons(
+        data        = md,
+        group       = "muni",
+        layerId     = ~MunicipalityCode,
+        fillColor   = ~pal(cum_per100k),
+        fillOpacity = 0.85,
+        color       = "#ffffff",
+        weight      = 0.25,
+        options     = pathOptions(pane = "choropleth"),
+        label       = ~ifelse(
+          is.na(cum_per100k),
+          paste0(Municipality, " — no data"),
+          paste0(Municipality, ": ", round(cum_per100k), " per 100k")
+        ),
+        highlightOptions = highlightOptions(weight = 1.5, color = "#000000",
+                                            bringToFront = TRUE)
+      ) |>
+      addLegend(position = "bottomright", pal = pal, values = md$cum_per100k,
+                title = "Cumulative reg.<br>per 100k inhab.",
+                na.label = "no data")
+  })
+
+  # click a municipality -> update selection
+  observeEvent(input$map_shape_click, {
+    id <- input$map_shape_click$id
+    if (!is.null(id)) selected_muni(id)
+  })
+
+  # highlight the selected municipality
+  observe({
+    sel <- muni_sf |> filter(MunicipalityCode == selected_muni())
+    proxy <- leafletProxy("map") |> clearGroup("sel")
+    if (nrow(sel) == 1) {
+      proxy |> addPolygons(data = sel, group = "sel", fill = FALSE,
+                           color = "#1f4e79", weight = 3,
+                           options = pathOptions(pane = "highlight"))
+    }
+  })
+
+  # per-municipality daily chart
+  output$chart <- renderPlot({
+    df <- cat_data() |>
+      filter(MunicipalityCode == selected_muni()) |>
+      arrange(date.registration.day)
+    validate(need(nrow(df) > 0,
+                  "No registration data for this municipality."))
+
+    muni_name <- df$Municipality[1]
+    has_pop   <- !any(is.na(df$population))
+    df$y      <- if (has_pop) df$n_per100k else df$n
+
+    k     <- input$ma_window
+    df$ma <- as.numeric(stats::filter(df$y, rep(1 / k, k), sides = 1))
+
+    y_lab <- if (has_pop) "Daily registrations per 100k inhab."
+             else         "Daily registrations (raw count)"
+    subt  <- paste0(input$category,
+                    if (!has_pop)
+                      "  •  no population data — showing raw counts" else "")
+
+    y_top <- max(c(df$y, df$ma), na.rm = TRUE)
+    ms    <- iran_milestones |>
+      filter(date >= min(df$date.registration.day),
+             date <= max(df$date.registration.day))
+
+    ggplot(df, aes(x = date.registration.day)) +
+      geom_col(aes(y = y), fill = "grey70", width = 1) +
+      geom_vline(data = ms, aes(xintercept = date),
+                 color = "black", linetype = "dashed", linewidth = 0.4) +
+      geom_line(aes(y = ma), color = "#c0392b", linewidth = 1, na.rm = TRUE) +
+      geom_text(data = ms, aes(x = date, y = y_top, label = label),
+                angle = 90, hjust = 1, vjust = -0.3, size = 2.9,
+                color = "grey20", check_overlap = TRUE) +
+      scale_x_date(date_labels = "%b", date_breaks = "1 month") +
+      scale_y_continuous(expand = expansion(mult = c(0, 0.20))) +
+      labs(title    = paste0(muni_name, " — daily PV registrations"),
+           subtitle = subt,
+           x = NULL, y = y_lab,
+           caption = paste0(k, "-day moving average (red). ",
+                            "Black dashed lines = Iran-war milestones.")) +
+      theme_minimal(base_size = 13)
+  })
+}
+
+shinyApp(ui, server)
+```
