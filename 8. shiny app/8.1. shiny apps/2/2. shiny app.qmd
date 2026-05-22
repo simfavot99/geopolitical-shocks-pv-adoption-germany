@@ -35,21 +35,22 @@ pacman::p_load(shiny, leaflet, sf, sfarrow, arrow, dplyr, ggplot2, here, tibble)
 # ---- 0. data ---------------------------------------------------------------
 base_dir <- here("8. shiny app", "8.1. shiny apps", "2")
 
-# st_make_valid() turns a handful of broken geometries into empty
-# GEOMETRYCOLLECTIONs, which leaflet::addPolygons() cannot read — drop them.
+# municipalities.parquet stores its geometry column as `geom`; federalState
+# as `geometry`. Drop any empty geometries via name-agnostic base subsetting
+# (st_make_valid can leave empties that leaflet::addPolygons cannot read).
 muni_sf <- st_read_parquet(file.path(base_dir, "municipalities.parquet")) |>
   st_zm(drop = TRUE) |>
   st_transform(4326) |>
   st_make_valid() |>
   st_simplify(dTolerance = 0.0035, preserveTopology = TRUE) |>
-  st_make_valid() |>
-  filter(!st_is_empty(geometry))
+  st_make_valid()
+muni_sf <- muni_sf[!st_is_empty(muni_sf), ]
 
 fs_sf <- st_read_parquet(file.path(base_dir, "federalState.parquet")) |>
   st_zm(drop = TRUE) |>
   st_transform(4326) |>
-  st_make_valid() |>
-  filter(!st_is_empty(geometry))
+  st_make_valid()
+fs_sf <- fs_sf[!st_is_empty(fs_sf), ]
 
 mun_day <- read_parquet(file.path(base_dir, "mun_day.parquet")) |>
   mutate(date.registration.day = as.Date(date.registration.day))
@@ -140,7 +141,9 @@ server <- function(input, output, session) {
 
   # base map: tiles + federal-state borders (rendered once)
   output$map <- renderLeaflet({
-    leaflet(options = leafletOptions(preferCanvas = TRUE)) |>
+    # default SVG renderer (not preferCanvas) — the canvas renderer fails to
+    # clear hover labels on mouseout, leaving them stuck on the map.
+    leaflet() |>
       addProviderTiles(providers$CartoDB.Positron) |>
       setView(lng = 10.45, lat = 51.16, zoom = 6) |>
       addMapPane("choropleth", zIndex = 410) |>
@@ -228,7 +231,7 @@ server <- function(input, output, session) {
       geom_col(aes(y = y), fill = "grey70", width = 1) +
       geom_vline(data = ms, aes(xintercept = date),
                  color = "black", linetype = "dashed", linewidth = 0.4) +
-      geom_line(aes(y = ma), color = "#c0392b", linewidth = 1) +
+      geom_line(aes(y = ma), color = "#c0392b", linewidth = 1, na.rm = TRUE) +
       geom_text(data = ms, aes(x = date, y = y_top, label = label),
                 angle = 90, hjust = 1, vjust = -0.3, size = 2.9,
                 color = "grey20", check_overlap = TRUE) +

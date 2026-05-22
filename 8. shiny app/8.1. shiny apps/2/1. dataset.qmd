@@ -249,7 +249,7 @@ data <- data |>
 
 ```
 
-Frequencies (only daily): weekly, monthly, quarterly, yearly:
+Frequencies (only daily): 
 
 ```{r}
 mun_day <- data |>
@@ -306,35 +306,11 @@ mun_year <- data |>
 **Population**:
 
 ```{r}
-#Credentials:
-# gen_auth_save(database = 'genesis')
-# gen_auth_save(database = 'regio')
-
-gen_logincheck(database = "genesis")
-gen_logincheck(database = "regio")
-
-
-# Load the data:
-pop.muni.2023 <- gen_table(
-  name      = "12411-01-01-5",
-  database  = "regio",
-  language  = "en",
-  startyear = 2023,
-  endyear   = 2023
+pop.muni.2023 <- st_read_parquet(
+  here("6. Maps", "6.2. map for 2023", "2. final dataset", "municipalities.parquet")
 ) |>
-  filter(`1_variable_code` == "GEMEIN",          # municipalities only (drops DINSG/DLAND/REGBEZ/KREISE)
-         is.na(`2_variable_attribute_code`)) |>  # sex total
-  select(
-    MunicipalityCode = `1_variable_attribute_code`,
-    Municipality     = `1_variable_attribute_label`,
-    year             = time,
-    population       = value
-  ) |>
-  mutate(
-    date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
-    population = suppressWarnings(as.numeric(population))
-  ) |>
-  select(Municipality, MunicipalityCode, date, population) 
+  st_drop_geometry() |>
+  select(MunicipalityCode, Municipality, population = Population2023)
 ```
 
 
@@ -350,6 +326,20 @@ mun_day <- mun_day |>
     n_cumulative_per100k = (n_cumulative / population) * 100000
   )
 ```
+
+Here I want you to select only those municipalities that are in the file: *6. Maps\6.2. map for 2023\2. final dataset\municipalities.parquet* (since only these municiplaities will be displayed in the map):
+
+```{r}
+# pop.muni.2023 was loaded straight from that file, so its codes ARE the map set
+map_codes <- pop.muni.2023$MunicipalityCode
+
+mun_day     <- mun_day     |> filter(MunicipalityCode %in% map_codes)
+mun_week    <- mun_week    |> filter(MunicipalityCode %in% map_codes)
+mun_month   <- mun_month   |> filter(MunicipalityCode %in% map_codes)
+mun_quarter <- mun_quarter |> filter(MunicipalityCode %in% map_codes)
+mun_year    <- mun_year    |> filter(MunicipalityCode %in% map_codes)
+```
+
 
 Other frequencies:
 ```{r}
