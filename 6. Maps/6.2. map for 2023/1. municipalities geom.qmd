@@ -1,0 +1,252 @@
+---
+title: 'Municipalities geometry'
+format: html
+---
+
+
+
+> Here I want to create the daatset with geometry for municiplaities using year 2023.
+Link: https://ec.europa.eu/eurostat/web/gisco/geodata/statistical-units/local-administrative-units
+Options:
+- File Format: GeoPackage
+- Coordinate reference system: EPSG 4326
+
+**Libraries**:
+
+```{r}
+pacman::p_load(here, sf, sfarrow, dplyr, leaflet, restatis)
+```
+
+
+::: {.callout}
+**What I want**:
+I need a dataset with:
+
+- municiplaity name: ciioaoa
+- municipality code
+- geometry
+- some additional variables (that I will remove later maybe)
+
+Must be only for Germany, not other countries.
+
+
+
+
+
+# 1. load the dataset
+> Here I want to load the dataset in: *6. Maps\6.2. map for 2023\1. data\LAU_RG_01M_2023_4326.gpkg*
+
+The GeoPackage is the Eurostat LAU (Local Administrative Units) 2023 layer. It
+covers every country in the dataset — the `geom` column already comes in EPSG 4326.
+
+```{r}
+lau_2023 <- st_read(
+  here('6. Maps', '6.2. map for 2023', '1. data', 'LAU_RG_01M_2023_4326.gpkg'),
+  quiet = TRUE
+)
+
+glimpse(lau_2023)
+```
+
+
+
+# 2. create the dataset
+> Here I want to create the dataset based on the instrcutions at the beginning of the document in *What I want*. Save the new file in: *6. Maps\6.2. map for 2023\2. final dataset*
+
+Keep only Germany (`CNTR_CODE == 'DE'`). The 8-digit German municipality code
+(AGS) is derived from `GISCO_ID` by dropping the `DE_` prefix — same rule used
+in *2. generate the maps.qmd*. Population, density and area are kept as the
+"additional variables" that may be dropped later.
+
+Create the dataset
+```{r}
+municipalities_2023 <- lau_2023 |>
+  filter(CNTR_CODE == 'DE') |>
+  mutate(MunicipalityCode = sub('DE_', '', GISCO_ID)) |>
+  select(
+    Municipality     = LAU_NAME,
+    MunicipalityCode,
+    Population2023   = POP_2023,
+    PopDensity2023   = POP_DENS_2023,
+    AreaKm2          = AREA_KM2,
+    geom
+  )
+
+municipalities_2023
+```
+
+Save the dataset as a (geo)parquet file, matching the format of the other
+spatial datasets in *6. Maps\6.1. Dataset*.
+
+```{r}
+st_write_parquet(
+  municipalities_2023,
+  here('6. Maps', '6.2. map for 2023', '2. final dataset', 'municipalities.parquet')
+)
+```
+
+
+
+
+# 3. check the dataset
+> Here I want to perform basic checks and create a simple map (using leaflet function) to show the municipalities all across Germany. Additionaly, you can include the bounderies of the Federal states (here you have the file: *6. Maps\6.1. Dataset\federalState.parquet*). In order to do that, you can simulate a variable and display it.
+
+## 3.1. Basic checks
+
+Row count, missing values, code uniqueness, CRS and geometry validity.
+
+```{r}
+data.frame(
+  Rows           = nrow(municipalities_2023),
+  MissingName    = sum(is.na(municipalities_2023$Municipality)),
+  MissingCode    = sum(is.na(municipalities_2023$MunicipalityCode)),
+  UniqueCodes    = dplyr::n_distinct(municipalities_2023$MunicipalityCode),
+  CodeWidth8     = all(nchar(municipalities_2023$MunicipalityCode) == 8),
+  CRS            = st_crs(municipalities_2023)$input,
+  GeomType       = paste(unique(as.character(st_geometry_type(municipalities_2023))), collapse = ', '),
+  AllValid       = all(st_is_valid(municipalities_2023))
+)
+
+glimpse(municipalities_2023)
+```
+
+## 3.2. Map
+
+Load the federal-state boundaries and simulate a numeric variable so the
+municipalities can be coloured.
+
+```{r}
+federal_states <- st_read_parquet(
+  here('6. Maps', '6.1. Dataset', 'federalState.parquet')
+) |>
+  st_transform(4326)
+
+set.seed(123)
+municipalities_map <- municipalities_2023 |>
+  st_transform(4326) |>
+  mutate(sim_value = runif(n()))
+```
+
+Leaflet map — municipalities filled by the simulated variable, federal-state
+borders drawn on top.
+
+```{r}
+pal <- colorNumeric('YlOrRd', domain = municipalities_map$sim_value)
+
+leaflet() |>
+  addProviderTiles(providers$CartoDB.Positron) |>
+  addPolygons(
+    data        = municipalities_map,
+    fillColor   = ~pal(sim_value),
+    weight      = 0.2,
+    color       = 'white',
+    fillOpacity = 0.7,
+    label       = ~Municipality,
+    popup       = ~paste0('<strong>', Municipality, '</strong><br>',
+                          'Code: ', MunicipalityCode, '<br>',
+                          'Simulated value: ', round(sim_value, 3))
+  ) |>
+  addPolygons(
+    data        = federal_states,
+    fill        = FALSE,
+    weight      = 1.5,
+    color       = 'black',
+    label       = ~FederalState
+  ) |>
+  addLegend(
+    data     = municipalities_map,
+    pal      = pal,
+    values   = ~sim_value,
+    title    = 'Simulated value',
+    position = 'bottomright'
+  )
+```
+
+
+
+# 4. Population data
+> Here I want to create and load population data for all the municiplaities in Germany in 2023 and find how many I can find a match.
+
+
+Build the dataset for the municiplaity population data:
+
+```{r}
+#Credentials:
+# gen_auth_save(database = 'genesis')
+# gen_auth_save(database = 'regio')
+
+gen_logincheck(database = "genesis")
+gen_logincheck(database = "regio")
+
+
+# Load the data:
+pop.muni.2023 <- gen_table(
+  name      = "12411-01-01-5",
+  database  = "regio",
+  language  = "en",
+  startyear = 2023,
+  endyear   = 2023
+) |>
+  filter(`1_variable_code` == "GEMEIN",          # municipalities only (drops DINSG/DLAND/REGBEZ/KREISE)
+         is.na(`2_variable_attribute_code`)) |>  # sex total
+  select(
+    MunicipalityCode = `1_variable_attribute_code`,
+    Municipality     = `1_variable_attribute_label`,
+    year             = time,
+    population       = value
+  ) |>
+  mutate(
+    date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
+    population = suppressWarnings(as.numeric(population))
+  ) |>
+  select(Municipality, MunicipalityCode, date, population) 
+```
+
+Here I want to see if there is a match:
+
+```{r}
+# Join the two population sources on the 8-digit municipality code (AGS):
+#   municipalities_2023 -> POP_2023 from the Eurostat LAU layer
+#   pop.muni.2023       -> population from Destatis regio table 12411-01-01-5
+pop_compare <- municipalities_2023 |>
+  st_drop_geometry() |>
+  select(MunicipalityCode,
+         Municipality_LAU = Municipality,
+         Population_LAU   = Population2023) |>
+  full_join(
+    pop.muni.2023 |>
+      select(MunicipalityCode,
+             Municipality_API = Municipality,
+             Population_API   = population),
+    by = "MunicipalityCode"
+  ) |>
+  mutate(
+    in_LAU       = !is.na(Municipality_LAU),
+    in_API       = !is.na(Municipality_API),
+    matched      = in_LAU & in_API,
+    pop_diff     = Population_API - Population_LAU,
+    pop_pct_diff = round(100 * pop_diff / Population_LAU, 1)
+  )
+
+# Show the largest population discrepancies among the matched municipalities
+pop_compare |>
+  arrange(desc(abs(pop_pct_diff)))
+```
+
+
+Here I want to know how many matches:
+
+```{r}
+pop_compare |>
+  summarise(
+    LAU_municipalities = sum(in_LAU),                 # rows from the LAU geometry
+    API_municipalities = sum(in_API),                 # rows from the Destatis API
+    matched            = sum(matched),                # code present in both
+    only_in_LAU        = sum(in_LAU & !in_API),       # geometry, no population
+    only_in_API        = sum(in_API & !in_LAU),       # population, no geometry
+    match_rate_LAU     = paste0(round(100 * sum(matched) / sum(in_LAU), 1), "%"),
+    # population agreement on the matched municipalities
+    identical_pop      = sum(pop_diff[matched] == 0, na.rm = TRUE),
+    mean_abs_pct_diff  = round(mean(abs(pop_pct_diff[matched]), na.rm = TRUE), 1)
+  )
+```
