@@ -1,0 +1,328 @@
+---
+title: 'Federal-state PV registration dataset'
+format: html
+---
+
+> This notebook builds the daily dataset used by the federal-state Shiny app. For each of Germany's 16 federal states and each day, it counts new PV-unit registrations from the German MaStR registry, splits them into balcony and non-balcony systems, and joins federal-state population so counts can also be expressed per 100,000 inhabitants.
+
+**Inputs**:
+
+- MaStR snapshot — `EinheitenSolar.parquet` (German solar-unit registry).
+- District-code lookup — `districts.parquet`.
+- Federal-state population — Destatis GENESIS table `12411-0010`, fetched via the `restatis` package.
+
+**Output** (saved next to the Shiny app):
+
+- `state_day.parquet` — daily registrations per federal state × PV category, with population and per-100k variants.
+
+**Libraries**:
+
+```{r}
+pacman::p_load(
+  here,        # here()
+  arrow,       # open_dataset(), read_parquet(), write_parquet(), collect()
+  sfarrow,     # st_read_parquet()
+  sf,          # st_drop_geometry()
+  dplyr,       # rename, mutate, case_when, if_else, left_join, relocate,
+               # filter, select, group_by, summarise, arrange, pull, ungroup, n
+  tibble,      # tibble()
+  tidyr,       # complete()
+  lubridate,   # floor_date()
+  stringr,     # str_pad()
+  restatis,    # gen_logincheck(), gen_table()
+  shiny        # shinyApp(), fluidPage(), selectizeInput(), updateSelectizeInput(), renderPrint(), verbatimTextOutput(), req()
+)
+```
+
+
+**Frequency**: daily registrations.
+
+# 1. Build the dataset
+
+**Step 1 — Load and clean the MaStR snapshot** (rename German columns, recoerce types, attach lookup tables, derive the balcony/non-balcony category, filter to Germany, add date helpers):
+
+
+```{r}
+data <- open_dataset(here("01_data/1.2. May 7 2026/EinheitenSolar.parquet"))
+
+
+# Step 1: rename German → English (explicit mapping, column order differs from old dataset)
+data <- data |>
+  rename(
+    UnitMastrNumber                          = EinheitMastrNummer,
+    DateLastUpdate                           = DatumLetzteAktualisierung,
+    LocationMastrNumber                      = LokationMaStRNummer,
+    GridOperatorVerificationStatus           = NetzbetreiberpruefungStatus,
+    GridOperatorVerificationDate             = NetzbetreiberpruefungDatum,
+    PlantOperatorMastrNumber                 = AnlagenbetreiberMastrNummer,
+    Country                                  = Land,
+    FederalState                             = Bundesland,
+    District                                 = Landkreis,
+    Municipality                             = Gemeinde,
+    MunicipalityCode                         = Gemeindeschluessel,
+    PostalCode                               = Postleitzahl,
+    City                                     = Ort,
+    RegistrationDate                         = Registrierungsdatum,
+    CommissioningDate                        = Inbetriebnahmedatum,
+    UnitSystemStatus                         = EinheitSystemstatus,
+    UnitOperationalStatus                    = EinheitBetriebsstatus,
+    NotPresentInMigratedUnits                = NichtVorhandenInMigriertenEinheiten,
+    PowerGenerationUnitName                  = NameStromerzeugungseinheit,
+    Weic_NotAvailable                        = Weic_nv,
+    PowerPlantNumber_NotAvailable            = Kraftwerksnummer_nv,
+    EnergySource                             = Energietraeger,
+    GrossCapacity                            = Bruttoleistung,
+    NetNominalCapacity                       = Nettonennleistung,
+    RemoteControllabilityGridOperator        = FernsteuerbarkeitNb,
+    FeedInType                               = Einspeisungsart,
+    AssignedActivePowerInverter              = ZugeordneteWirkleistungWechselrichter,
+    NumberOfModules                          = AnzahlModule,
+    TypeOfSolarSystem                        = ArtDerSolaranlage,
+    PowerLimitation                          = Leistungsbegrenzung,
+    UniformOrientationAndTiltAngle           = EinheitlicheAusrichtungUndNeigungswinkel,
+    MainOrientation                          = Hauptausrichtung,
+    MainOrientationTiltAngle                 = HauptausrichtungNeigungswinkel,
+    UsageArea                                = Nutzungsbereich,
+    EegMastrNumber                           = EegMaStRNummer,
+    StorageAtSameLocation                    = SpeicherAmGleichenOrt,
+    SecondaryOrientation                     = Nebenausrichtung,
+    SecondaryOrientationTiltAngle            = NebenausrichtungNeigungswinkel,
+    Street                                   = Strasse,
+    StreetNotFound                           = StrasseNichtGefunden,
+    HouseNumber_NotAvailable                 = Hausnummer_nv,
+    HouseNumberNotFound                      = HausnummerNichtGefunden,
+    Longitude                                = Laengengrad,
+    Latitude                                 = Breitengrad,
+    DateStartTemporaryDecommissioning        = DatumBeginnVoruebergehendeStilllegung,
+    HouseNumber                              = Hausnummer,
+    AddressAddition                          = Adresszusatz,
+    RemoteControllabilityDirectMarketer      = FernsteuerbarkeitDv,
+    PreviousPlantOperatorMastrNumber         = AltAnlagenbetreiberMastrNummer,  # new variable
+    DateOfOperatorChange                     = DatumDesBetreiberwechsels,
+    DateRegistrationOfOperatorChange         = DatumRegistrierungDesBetreiberwechsels,
+    CadastralDistrict                        = Gemarkung,
+    FieldParcelNumbers                       = FlurFlurstuecknummern,
+    ConnectionToExtraHighOrHighVoltage       = AnschlussAnHoechstOderHochSpannung,
+    DatePermanentDecommissioning             = DatumEndgueltigeStilllegung,
+    SizeOfUsedAreaInHectares                 = GroesseDerInAnspruchGenommenenFlaecheInHektar,
+    PreviousUsageTypeOfArea                  = VorherigerNutzungsartenbereichDerFlaeche,
+    PredominantUsageTypeBeforeSolarConstruction = UeberwiegendeNutzungsartDerFlaecheVorErrichtung,
+    NameOfSolarPark                          = NameDesSolarparks,
+    AdditionalFeaturesOfAreaAndCurrentUsage  = ZusaetzlicheMerkmaleDerFlaecheUndDerAktuellenFlaechennutzung,
+    GenMastrNumber                           = GenMastrNummer,
+    CommissioningDateAtCurrentLocation       = InbetriebnahmedatumAmAktuellenStandort,
+    DispatchResponsible                      = Einsatzverantwortlicher,
+    CitizenEnergy                            = Buergerenergie,
+    DateResumptionOfOperation                = DatumWiederaufnahmeBetrieb,
+    PlannedCommissioningDate                 = GeplantesInbetriebnahmedatum,
+    ClearanceHeight                          = LichteHoehe,
+    PowerPlantNumber                         = Kraftwerksnummer
+  )
+
+# Step 2: convert numeric columns (XML parsing stores everything as character)
+data <- data |>
+  mutate(
+    TypeOfSolarSystem           = as.integer(TypeOfSolarSystem),
+    Country                     = as.integer(Country),
+    FederalState                = as.integer(FederalState),
+    GrossCapacity               = as.numeric(GrossCapacity),
+    NetNominalCapacity          = as.numeric(NetNominalCapacity),
+    AssignedActivePowerInverter = as.numeric(AssignedActivePowerInverter),
+    NumberOfModules             = as.integer(NumberOfModules)
+  )
+
+# Step 3: lookup tables
+C1 <- data.frame(
+  TypeOfSolarSystem.names = c(
+    "Structural_facilities", "Other_Structural_facilities", "Open_space",
+    "Bodies_water", "Large_parking_lot", "Plug_in_sola_system", "Onshore&Offshore_wind_power"
+  ),
+  TypeOfSolarSystem = as.integer(c(853, 2484, 852, 3002, 3058, 2961, NA))
+)
+
+C2 <- tibble(
+  Country = as.integer(c(84, 231, 90, 66, 198, 206, 106)),
+  Country.sn = c("Germany", "Switzerland", "Denmark", "Belgium", "Netherlands", "Austria", "France")
+)
+
+C3 <- data.frame(
+  FederalState = as.integer(c(
+    1409, 1402, 1400, 1403, 1412, 1408, 1410, 1407,
+    1414, 1411, 1413, 1405, 1415, 1406, 1401, 1404
+  )),
+  FederalState.names = c(
+    "North Rhine-Westphalia", "Baden-Württemberg", "Brandenburg", "Bavaria",
+    "Saarland", "Lower Saxony", "Rhineland-Palatinate", "Mecklenburg-Western Pomerania",
+    "Saxony-Anhalt", "Schleswig-Holstein", "Saxony", "Hesse",
+    "Thuringia", "Hamburg", "Berlin", "Bremen"
+  ),
+  FederalStateCode = c(
+    "DEA", "DE1", "DE4", "DE2",
+    "DEC", "DE9", "DEB", "DEM",
+    "DEE", "DEF", "DED", "DE7",
+    "DEG", "DE6", "DE3", "DE5"
+  )
+)
+
+# district code from map (no geometry needed)
+districts_map <- st_read_parquet(here("ignore/3. data/2. maps/districts.parquet")) |>
+  st_drop_geometry() |>
+  select(District, DistrictCode)
+
+# Step 4: join lookups
+data <- data |>
+  left_join(C1, by = "TypeOfSolarSystem") |>
+  relocate(TypeOfSolarSystem.names, .after = TypeOfSolarSystem) |>
+  left_join(C2, by = "Country") |>
+  relocate(Country.sn, .after = Country) |>
+  left_join(C3, by = "FederalState") |>
+  relocate(FederalState.names, .after = FederalState) |>
+  relocate(FederalStateCode, .after = FederalState.names) |>
+  left_join(districts_map, by = "District") |>
+  relocate(DistrictCode, .after = District)
+
+# Step 5: solar_category
+reform_date <- as.Date("2024-05-16")
+
+data <- data |>
+  mutate(
+    RegistrationDate  = as.Date(RegistrationDate),
+    CommissioningDate = as.Date(CommissioningDate),
+    solar_category = case_when(
+      TypeOfSolarSystem == 2961 & RegistrationDate <  reform_date & AssignedActivePowerInverter <= 0.6 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 & RegistrationDate >= reform_date & AssignedActivePowerInverter <= 0.8 & GrossCapacity <= 2.0 ~ "Plug_in_sola_system - Balcony",
+      TypeOfSolarSystem == 2961 ~ "Plug_in_sola_system - Non-Balcony",
+      TRUE ~ TypeOfSolarSystem.names
+    )
+  )
+
+# Step 6: filter Germany
+data <- data |>
+  filter(Country.sn == "Germany")
+
+# Step 7: date variables (week, month, quarter, year)
+data <- data |>
+  mutate(
+    date.registration.day     = RegistrationDate,
+    date.registration.week    = floor_date(RegistrationDate,  "week"),
+    date.registration.month   = floor_date(RegistrationDate,  "month"),
+    date.registration.quarter = floor_date(RegistrationDate,  "quarter"),
+    date.registration.year    = floor_date(RegistrationDate,  "year"),
+    date.commission.day       = CommissioningDate,
+    date.commission.week      = floor_date(CommissioningDate, "week"),
+    date.commission.month     = floor_date(CommissioningDate, "month"),
+    date.commission.quarter   = floor_date(CommissioningDate, "quarter"),
+    date.commission.year      = floor_date(CommissioningDate, "year")
+  )
+
+# Step 8: fix MunicipalityCode
+data <- data |>
+  mutate(MunicipalityCode = str_pad(as.character(MunicipalityCode), 8, pad = "0"))
+
+# Collapse every category other than `Balcony PVs` into a single `Non-balcony PVs` group:
+
+
+data <- data |>
+  mutate(solar_category = if_else(solar_category == "Plug_in_sola_system - Balcony",
+                                  "Balcony PVs",
+                                  "Non-balcony PVs"))
+
+
+```
+
+**Step 2 — Aggregate to daily counts per federal state and PV category** (fill missing date slots with zeros and compute cumulative totals):
+
+```{r}
+state_day <- data |>
+  group_by(FederalStateCode, FederalState.names, solar_category, date.registration.day) |>
+  summarise(n = n(), .groups = "drop") |>
+  collect() |>
+  complete(nesting(FederalStateCode, FederalState.names), solar_category,
+           date.registration.day = seq(min(date.registration.day), max(date.registration.day), by = "day"),
+           fill = list(n = 0)) |>
+  arrange(FederalStateCode, solar_category, date.registration.day) |>
+  group_by(FederalStateCode, solar_category) |> mutate(n_cumulative = cumsum(n)) |> ungroup()
+```
+
+
+
+**Step 3 — Federal-state population** (from Destatis GENESIS table `12411-0010`, reference date 31 December). A `restatis` GENESIS account is required; the `gen_auth_save()` calls below need to be run once to store credentials:
+
+```{r}
+# Credentials
+# gen_auth_save(database = "genesis")   # for www-genesis.destatis.de
+# gen_auth_save(database = "regio")     # for www.regionalstatistik.de
+# gen_auth_save(database = "zensus")    # for ergebnisse.zensus2022.de (if you ever need it)
+
+gen_logincheck(database = "genesis")
+gen_logincheck(database = "regio")
+
+# Create the dataset
+pop.federal_state <- gen_table(
+  name      = "12411-0010",
+  database  = "genesis",
+  language  = "en",
+  startyear = 2023,
+  endyear   = 2023
+)
+
+federal_state.codes <- tibble::tibble(
+  code = c("01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16"),
+  nuts = c("DEF","DE6","DE9","DE5","DEA","DE7","DEB","DE1","DE2","DEC","DE3","DE4","DEM","DED","DEE","DEG")
+)
+
+pop.federal_state.2023 <- pop.federal_state |>
+  select(
+    code       = `1_variable_attribute_code`,
+    name       = `1_variable_attribute_label`,
+    year       = time,
+    population = value
+  ) |>
+  mutate(
+    date       = as.Date(paste0(substr(year, 1, 4), "-12-31")),
+    population = suppressWarnings(as.numeric(population))
+  ) |>
+  select(-year) |>
+  left_join(federal_state.codes, by = "code") |>
+  select(FederalState.names = name, FederalStateCode = nuts, date, population) |>
+  arrange(FederalStateCode, date)
+```
+
+
+**Step 4 — Merge population into the daily series** (creates per-100k variants):
+```{r}
+pop_lookup <- pop.federal_state.2023 |>
+  select(FederalStateCode, population)
+
+state_day <- state_day |>
+  left_join(pop_lookup, by = "FederalStateCode") |>
+  mutate(
+    n_per100k            = (n            / population) * 100000,
+    n_cumulative_per100k = (n_cumulative / population) * 100000
+  )
+```
+
+**Step 5 — Save** the daily dataset next to the Shiny app:
+
+```{r}
+out_dir <- here("8. shiny app", "8.1. shiny apps", "4")
+
+write_parquet(state_day, file.path(out_dir, "state_day.parquet"))
+```
+
+**Load** (use this to reopen the saved dataset later without re-running the pipeline):
+
+```{r}
+out_dir <- here("8. shiny app", "8.1. shiny apps", "4")
+
+state_day <- read_parquet(file.path(out_dir, "state_day.parquet"))
+```
+
+**Sanity check** — daily registrations per state, faceted by PV category:
+
+```{r}
+state_day |>
+  ggplot(aes(x = date.registration.day, y = n, color = FederalState.names)) +
+  geom_line() +
+  facet_wrap(~solar_category)
+```

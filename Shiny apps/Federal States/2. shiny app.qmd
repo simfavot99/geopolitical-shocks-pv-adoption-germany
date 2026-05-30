@@ -1,0 +1,310 @@
+---
+title: 'Federal-state PV adoption — Shiny app'
+format: html
+---
+
+> Interactive Shiny app for exploring the impact of the 2026 Iran war on PV adoption across Germany's 16 federal states. The unit of observation is the German MaStR (Marktstammdatenregister) solar-unit registry; plug-in systems are split into balcony and non-balcony PVs.
+
+**Layout**:
+
+- **Left** — a Leaflet map of the federal-state boundaries. Each state is coloured by the cumulative number of PV registrations over the whole sample (toggleable: raw counts or per 100 000 inhabitants).
+- **Right top** — daily registrations for the selected state shown as grey bars, overlaid with a moving-average line in red. Two black dashed vertical lines mark the Iran-war start (28 Feb 2026) and the ceasefire (8 Apr 2026).
+- **Right bottom** — moving-average daily registrations for each year (Jan – May 7, to match 2026's data window). 2026 is drawn in red; other years use a viridis palette.
+
+**Controls**:
+
+- **PV type** — Balcony or Non-balcony.
+- **Outcome** — raw count or per 100 000 inhabitants.
+- **MA window — daily chart** and **MA window — yearly chart** — independent moving-average windows (in days), set with sliders.
+- **Date range — daily chart** — restrict the daily chart to a chosen period.
+
+**Behaviour**:
+
+- The map defaults to Baden-Württemberg before any click.
+- Clicking any state updates both right-side charts.
+- Y-axis scales are held fixed across federal states (within the current PV-type and outcome choice), so clicking a different state gives a directly comparable view.
+
+**Inputs**:
+
+- `federalState.parquet` — federal-state polygon boundaries (sits next to this file).
+- `state_day.parquet` — daily registrations per federal state, produced by `1. dataset.qmd` (sits next to this file).
+
+**Libraries**:
+
+```{r}
+pacman::p_load(
+  shiny, leaflet, sf, sfarrow, arrow,
+  dplyr, tidyr, ggplot2, here, tibble, lubridate
+)
+```
+
+# Shiny app
+
+The UI and server live in a single chunk so the app can be run by sourcing this file directly:
+
+```{r}
+# ============================================================================
+# Federal-state PV adoption in Germany — cumulative-registration map + charts
+# ============================================================================
+
+# ---- 0. data ---------------------------------------------------------------
+base_dir <- here("8. shiny app", "8.1. shiny apps", "4")
+
+fs_sf <- st_read_parquet(file.path(base_dir, "federalState.parquet")) |>
+  rename(FederalState.names = FederalState) |>
+  st_zm(drop = TRUE) |>
+  st_transform(4326) |>
+  st_make_valid()
+fs_sf <- fs_sf[!st_is_empty(fs_sf), ]
+
+state_day <- read_parquet(file.path(base_dir, "state_day.parquet")) |>
+  mutate(date.registration.day = as.Date(date.registration.day),
+         year = year(date.registration.day))
+
+# ---- 1. constants ----------------------------------------------------------
+default_state <- "DE1"                       # Baden-Württemberg
+
+# Only 2 dates — war begins (treatment onset) and ceasefire (treatment ends).
+# These bracket the Iran-war shock window for PV-adoption analysis.
+iran_milestones <- tribble(
+  ~date,                  ~label,
+  as.Date("2026-02-28"),  "Iran war begins",
+  as.Date("2026-04-08"),  "Ceasefire"
+)
+
+# Cap all years at May 7 — 2026 has no data past that, so the per-year
+# comparison is apples-to-apples only up to that cut-off.
+may7 <- as.Date("2000-05-07")
+
+# date bounds for the daily-chart range slider
+date_min <- min(state_day$date.registration.day, na.rm = TRUE)
+date_max <- max(state_day$date.registration.day, na.rm = TRUE)
+
+# ---- 2. UI -----------------------------------------------------------------
+ui <- fluidPage(
+  titlePanel("Iran war & federal-state PV adoption — Germany"),
+  fluidRow(
+    column(3, radioButtons("category", "PV type:",
+                           choices  = c("Balcony PVs", "Non-balcony PVs"),
+                           selected = "Balcony PVs")),
+    column(3, radioButtons("adjust", "Outcome:",
+                           choices  = c("Per 100k inhab." = "pop",
+                                        "Raw count"       = "raw"),
+                           selected = "pop")),
+    column(3, sliderInput("ma_window_daily", "MA window — daily chart (days):",
+                          min = 3, max = 60, value = 14, step = 1)),
+    column(3, sliderInput("ma_window_yearly", "MA window — yearly chart (days):",
+                          min = 3, max = 60, value = 14, step = 1))
+  ),
+  fluidRow(
+    column(12, sliderInput("daily_range", "Date range — daily chart:",
+                           min   = date_min,
+                           max   = date_max,
+                           value = c(date_min, date_max),
+                           timeFormat = "%Y-%m-%d",
+                           width = "100%"))
+  ),
+  helpText(
+    "Map colour = cumulative registrations over the whole sample. ",
+    "Click a federal state to update the charts on the right. ",
+    "Per-year chart caps every year at May 7 (the 2026 max date). ",
+    "Y-axis scales are fixed across federal states (within the current PV-type/outcome selection)."
+  ),
+  fluidRow(
+    column(6, leafletOutput("map", height = "700px")),
+    column(6,
+      plotOutput("daily_chart",  height = "345px"),
+      plotOutput("yearly_chart", height = "345px")
+    )
+  )
+)
+
+# ---- 3. server -------------------------------------------------------------
+server <- function(input, output, session) {
+
+  selected_state <- reactiveVal(default_state)
+
+  # data for the chosen PV category
+  cat_data <- reactive({
+    state_day |> filter(solar_category == input$category)
+  })
+
+  # cumulative over the whole sample, per federal state
+  cum_tbl <- reactive({
+    val_col <- if (input$adjust == "pop") "n_per100k" else "n"
+    cat_data() |>
+      group_by(FederalStateCode) |>
+      summarise(cum = sum(.data[[val_col]], na.rm = TRUE), .groups = "drop")
+  })
+
+  map_data <- reactive({
+    fs_sf |> left_join(cum_tbl(), by = "FederalStateCode")
+  })
+
+  # global y-max for the daily chart — max across all states for the current
+  # category + outcome, so the y-axis is fixed when the user clicks a different
+  # state. Recomputed when category or outcome changes.
+  daily_y_max <- reactive({
+    val_col <- if (input$adjust == "pop") "n_per100k" else "n"
+    suppressWarnings(max(cat_data()[[val_col]], na.rm = TRUE))
+  })
+
+  # global y-max for the yearly chart — max of the per-year MA across all
+  # states, for the current category + outcome + yearly MA window.
+  yearly_y_max <- reactive({
+    val_col <- if (input$adjust == "pop") "n_per100k" else "n"
+    k <- input$ma_window_yearly
+    cat_data() |>
+      mutate(md = make_date(2000,
+                            month(date.registration.day),
+                            day(date.registration.day))) |>
+      filter(md <= may7) |>
+      arrange(FederalStateCode, year, md) |>
+      group_by(FederalStateCode, year) |>
+      mutate(ma = as.numeric(stats::filter(.data[[val_col]],
+                                           rep(1 / k, k), sides = 1))) |>
+      ungroup() |>
+      pull(ma) |>
+      max(na.rm = TRUE)
+  })
+
+  # base map: tiles + panes (rendered once)
+  output$map <- renderLeaflet({
+    leaflet() |>
+      addProviderTiles(providers$CartoDB.Positron) |>
+      setView(lng = 10.45, lat = 51.16, zoom = 6) |>
+      addMapPane("choropleth", zIndex = 410) |>
+      addMapPane("highlight",  zIndex = 420)
+  })
+
+  # choropleth — redrawn when category or adjustment changes
+  observe({
+    md  <- map_data()
+    pal <- colorBin("YlGn", domain = md$cum, bins = 8, na.color = "#cfcfcf")
+
+    leafletProxy("map") |>
+      clearGroup("state") |>
+      clearControls() |>
+      addPolygons(
+        data        = md, group = "state",
+        layerId     = ~FederalStateCode,
+        fillColor   = ~pal(cum),
+        fillOpacity = 0.85,
+        color       = "#ffffff",
+        weight      = 0.6,
+        options     = pathOptions(pane = "choropleth"),
+        label       = ~paste0(FederalState.names, ": ",
+                              format(round(cum), big.mark = ",")),
+        highlightOptions = highlightOptions(weight = 1.5, color = "#000000",
+                                            bringToFront = FALSE)
+      ) |>
+      addLegend(position = "bottomright", pal = pal, values = md$cum,
+                title = if (input$adjust == "pop") "Cumulative<br>per 100k"
+                        else                       "Cumulative<br>count")
+  })
+
+  # click → set selection
+  observeEvent(input$map_shape_click, {
+    id <- input$map_shape_click$id
+    if (!is.null(id)) selected_state(id)
+  })
+
+  # highlight selected state
+  observe({
+    sel <- fs_sf |> filter(FederalStateCode == selected_state())
+    p   <- leafletProxy("map") |> clearGroup("sel")
+    if (nrow(sel) == 1) {
+      p |> addPolygons(data = sel, group = "sel", fill = FALSE,
+                       color = "#1f4e79", weight = 3,
+                       options = pathOptions(pane = "highlight"))
+    }
+  })
+
+  # ---- daily chart (full sample) -------------------------------------------
+  output$daily_chart <- renderPlot({
+    df <- cat_data() |>
+      filter(FederalStateCode == selected_state(),
+             date.registration.day >= input$daily_range[1],
+             date.registration.day <= input$daily_range[2]) |>
+      arrange(date.registration.day)
+    validate(need(nrow(df) > 0, "No data for this state in the selected range."))
+
+    sname <- df$FederalState.names[1]
+    df$y  <- if (input$adjust == "pop") df$n_per100k else df$n
+
+    k     <- input$ma_window_daily
+    df$ma <- as.numeric(stats::filter(df$y, rep(1 / k, k), sides = 1))
+
+    ms <- iran_milestones |>
+      filter(date >= input$daily_range[1],
+             date <= input$daily_range[2])
+    y_max <- daily_y_max()
+    y_lab <- if (input$adjust == "pop") "Daily reg. per 100k"
+             else                       "Daily reg. (raw count)"
+
+    ggplot(df, aes(x = date.registration.day)) +
+      geom_col(aes(y = y), fill = "grey70", width = 1) +
+      geom_vline(data = ms, aes(xintercept = date),
+                 color = "black", linetype = "dashed", linewidth = 0.5) +
+      geom_text(data = ms, aes(x = date, y = y_max, label = label),
+                angle = 90, hjust = 1, vjust = -0.3, size = 3,
+                color = "grey20", check_overlap = TRUE) +
+      geom_line(aes(y = ma), color = "#c0392b", linewidth = 0.9, na.rm = TRUE) +
+      scale_x_date(date_labels = "%Y-%m", date_breaks = "6 months") +
+      coord_cartesian(ylim = c(0, y_max * 1.05)) +
+      labs(title    = paste0(sname, " — daily PV registrations"),
+           subtitle = paste(input$category, "•", k, "-day MA"),
+           x = NULL, y = y_lab) +
+      theme_minimal(base_size = 12)
+  })
+
+  # ---- per-year chart (MA, Jan–May 7) --------------------------------------
+  output$yearly_chart <- renderPlot({
+    df <- cat_data() |>
+      filter(FederalStateCode == selected_state()) |>
+      mutate(md = make_date(2000,
+                            month(date.registration.day),
+                            day(date.registration.day))) |>
+      filter(md <= may7) |>
+      arrange(year, md)
+    validate(need(nrow(df) > 0, "No data for this state."))
+
+    sname <- df$FederalState.names[1]
+    df$y  <- if (input$adjust == "pop") df$n_per100k else df$n
+    k     <- input$ma_window_yearly
+    df <- df |>
+      group_by(year) |>
+      mutate(ma = as.numeric(stats::filter(y, rep(1 / k, k), sides = 1))) |>
+      ungroup()
+
+    # year palette: 2026 = red, other years = viridis (still distinguishable).
+    years_chr <- sort(unique(as.character(df$year)))
+    other_yrs <- setdiff(years_chr, "2026")
+    year_pal  <- setNames(
+      hcl.colors(max(length(other_yrs), 1), palette = "Viridis", rev = FALSE),
+      other_yrs
+    )
+    if ("2026" %in% years_chr) year_pal["2026"] <- "red"
+
+    # 2026 last in plotting order so it sits on top of the other lines
+    df$year_f <- factor(df$year, levels = c(other_yrs, "2026"))
+
+    y_lab <- if (input$adjust == "pop") "MA daily reg. per 100k"
+             else                       "MA daily reg."
+
+    ggplot(df, aes(x = md, y = ma, color = year_f, group = year_f)) +
+      geom_line(linewidth = 0.8, na.rm = TRUE) +
+      scale_x_date(date_labels = "%b", date_breaks = "1 month") +
+      scale_color_manual(values = year_pal, name = "Year",
+                         breaks = years_chr) +
+      coord_cartesian(ylim = c(0, yearly_y_max() * 1.05)) +
+      labs(title    = paste0(sname, " — MA daily registrations by year (Jan–May 7)"),
+           subtitle = paste(input$category, "•", k, "-day MA"),
+           x = NULL, y = y_lab) +
+      theme_minimal(base_size = 12) +
+      theme(legend.position = "right")
+  })
+}
+
+shinyApp(ui, server)
+```
