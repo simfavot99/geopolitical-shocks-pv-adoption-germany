@@ -6,7 +6,7 @@ Interactive R Shiny app for exploring how the **2026 Iran war** affected solar-P
 
 ### 1. Controls (top of the page)
 
-![](images/paste-1.png)
+<img src="images/paste-1.png" width="600">
 
 The control bar lets you choose:
 
@@ -17,13 +17,13 @@ The control bar lets you choose:
 
 ### 2. Map (left side)
 
-![](images/paste-2.png)
+<img src="images/paste-2.png" width="600">
 
 A choropleth map of the 16 federal states, coloured by **cumulative PV registrations** over the whole sample. Click any state to update the right-side charts. The map opens with **Baden-Württemberg** selected by default.
 
 ### 3. Charts (right side)
 
-![](images/paste-3.png)
+<img src="images/paste-3.png" width="600">
 
 Two stacked charts for the selected state:
 
