@@ -5,43 +5,6 @@ format: html
 
 
 
-::: {.callout}
-**Shiny app I want to create**:
-- I want to create a shiny app where on the left there is a leaflet map of all federla states bounderies and the outcome variable can be (there are different options, and you can choose which one you want):
-  1. cumulative registrations from the beginning of the sample to the end (not just 2026, but also the other years). You can use either population adjusted or not
-  2. (perhaps) the growth rate of registrations from before Iran war shock and after. You can decide how to calculate this growth rate, but it should be something that can capture the change in the adoption rate of solar units after the shock of the Iran war. 
-  3. suggest me any relevant measure I can use as outcome variable to capture the shock of the Iran war on the adoption rate of solar units at the federal state level. I want to have the option to choose which one I want to use as outcome variable in the map
-
-Idea of the map: identify which federal state (by looking at the map) was hit more by the Iran war or the shock of the iran war can have a larger effect.
-
-
-Also, you have to add an option allowing you to decide whether you want population adjusted or not
-
-
-- on the right top there must a chart of the daily registration in grey + MA
-Once you seelct on the map one federal state, it dispays the chart of that specific state of the daily registrations (popuation corrected) on the backgroung in grey + moving average (with a slide to deicde the window)
-As default federal state to show at the beginning, even before seelcting a specific state, show the plot for Baden wruttemberg federal state
-in the plot add the vertcial line sin black for the iran war relevant dates (max 2 dates, no more. And they must be relevant for the impact of the Iran war on the adoption rate of solar units)
-I want to have a slider (only for this chart) where you can select the range of the period to choose.
-Keep the scale of y-axis the same across federal states (so that once i click on a different federal state it shows that with the same scale of the other one)
-
-- on the right down there must be a plot of the selected federal state that show the MA of daily registration for each year (so that you have for each year the MA of daily registration). Be careful that for 2026 there is no data after May. Decide if for the other years I should dispaly the whole series or I should cap it up to May.
-There must be also a slider in the shiny app that you can use to chnage the window
-I want to show a red color for 2026 and a different group of colors for all the others (i must be in any case be able to distinguish between the other years)
-Keep the scale of y-axis the same across federal states (so that once i click on a different federal state it shows that with the same scale of the other one)
-
-- create an option where you can decide whether to focs on balcoy PVs or non-balcoy PVs
-
-Here you have the datasets:
-  1. dataset for federal states bounderies: *8. shiny app\8.1. shiny apps\4\federalState.parquet*
-  3. the dataset where you cna find the registration is here: *8. shiny app\8.1. shiny apps\4\state_day.parquet*
-
-Here (*8. shiny app\8.1. shiny apps\4\1. dataset.qmd*) you can find the file i used to create the dataset for the balcony PVs registrations
-I want you to create a shiny app, where you include both the user interface and the server in the same chunk.
-
-:::
-
-
 
 
 **Libraries**:
