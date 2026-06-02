@@ -1,63 +1,62 @@
-# Federal-state PV adoption — Shiny app
+# Federal-state PV adoption Shiny app
 
-Interactive R Shiny app for exploring how the **2026 Iran war** affected solar-PV adoption across Germany's **16 federal states**. The app uses the German MaStR (Marktstammdatenregister) solar-unit registry, with plug-in PV systems split into **balcony** and **non-balcony** categories.
+A Shiny app for exploring how the 2026 Iran war affected solar-PV adoption across Germany's 16 federal states. Data: the German **MaStR** (Marktstammdatenregister) solar-unit registry, split into **balcony** and **non-balcony** plug-in PV systems.
 
-## What the app looks like
+---
 
-### 1. Controls (top of the page)
+## 1. Controls
 
 <img src="images/paste-1.png" width="600">
 
-The control bar lets you choose:
+At the top you have the controls. Here is what each one does:
 
-- **PV type** — Balcony or Non-balcony.
-- **Outcome** — raw count or per 100 000 inhabitants.
-- **MA window — daily chart / yearly chart** — independent moving-average windows (in days) for the two charts.
-- **Date range — daily chart** — restrict the daily chart's x-axis to a chosen period.
+- **PV type** — Balcony or Non-balcony plug-in PV systems.
+- **Outcome** — show the chart series as raw counts or per 100,000 inhabitants.
+- **MA window — daily chart** — moving-average window (in days) for the top-right chart.
+- **MA window — yearly chart** — moving-average window for the bottom-right chart.
+- **Map outcome** — what the map colors show:
+  - *Cumulative registrations* — total adoption over the whole sample.
+  - *Post/Pre ratio (±30d around war start)* — within-2026 acceleration. Values > 1 mean adoption sped up after 28 Feb 2026.
+  - *YoY same-window ratio (2026 / 2025)* — same 30-day calendar window vs. 2025. Controls for seasonal patterns.
+- **Date range — daily chart** — limit the top chart's x-axis to a chosen period.
 
-### 2. Map (left side)
+---
+
+## 2. Map
 
 <img src="images/paste-2.png" width="600">
 
-A choropleth map of the 16 federal states, coloured by **cumulative PV registrations** over the whole sample. Click any state to update the right-side charts. The map opens with **Baden-Württemberg** selected by default.
+A choropleth map of the 16 federal states, colored by the **Map outcome** you selected. Click any state to update the right-side charts. The map opens with **Baden-Württemberg** selected by default.
 
-### 3. Charts (right side)
+Hover a state to see its exact value. Empty values appear in grey ("no data").
+
+---
+
+## 3. Plots
 
 <img src="images/paste-3.png" width="600">
 
 Two stacked charts for the selected state:
 
-- **Top — daily registrations**: grey bars are daily counts, the red line is the moving average. Two black dashed vertical lines mark the **Iran-war start (28 Feb 2026)** and the **ceasefire (8 Apr 2026)**.
-- **Bottom — moving average by year**: one line per year over Jan – May 7 (so 2026's partial year compares like-for-like with the others). **2026 is drawn in red**; the other years use a viridis palette.
+- **Top — daily registrations** Grey bars are daily registrations; the red line is the moving average (window controlled by the slider). The two black dashed vertical lines mark the **Iran-war start** (28 Feb 2026) and the **ceasefire** (8 Apr 2026).
+- **Bottom — moving-average daily registrations per year** One line per year, Jan – May 7 (capped at May 7 because that's where 2026 ends). 2026 is drawn in **red**; other years use a viridis palette so you can still tell them apart.
 
-The y-axis scale is held **fixed across federal states** within the current PV-type / outcome choice, so clicking another state gives a directly comparable view.
+Y-axis scales are held fixed across federal states (within the current PV-type / outcome choice), so clicking a different state gives a directly comparable view.
+
+---
 
 ## How to run it
 
 1. Open `2. shiny app.qmd` in RStudio.
-2. Make sure these two files are present **in the same folder**:
+2. Make sure these two files sit next to it in the same folder:
    - `federalState.parquet` — federal-state polygon boundaries.
    - `state_day.parquet` — daily registrations per state (produced by `1. dataset.qmd`).
-3. Run the chunks (or click **Run Document**). The app opens in the viewer pane.
+3. Click **Run Document** (or run the code chunk directly).
 
-If `state_day.parquet` is missing, run `1. dataset.qmd` first to build it.
+## Data sources
 
-## Where the data comes from
+- **Registrations** — German MaStR (Marktstammdatenregister) solar-unit registry.
+- **Federal-state population** — Destatis GENESIS table `12411-0010` (reference date 31 Dec).
+- **Federal-state boundaries** — Eurostat NUTS-1 polygons for Germany.
 
-- **PV registrations** — MaStR (Marktstammdatenregister), the official German solar-unit registry.
-- **Federal-state population** — Destatis GENESIS table `12411-0010` (reference date 31 Dec 2023), pulled via the [`restatis`](https://cran.r-project.org/package=restatis) package.
-- **Federal-state boundaries** — NUTS-1 regions for Germany.
-
-The full data-building pipeline is documented in `1. dataset.qmd`.
-
-## Folder contents
-
-```
-Federal States/
-├── 1. dataset.qmd          # builds state_day.parquet from MaStR
-├── 2. shiny app.qmd        # the Shiny app (UI + server in one chunk)
-├── federalState.parquet    # federal-state polygons
-├── state_day.parquet       # daily registrations per state (output of 1. dataset.qmd)
-├── README.md               # this file
-└── images/                 # screenshots used in this README
-```
+The full data-building pipeline lives in `1. dataset.qmd`.
