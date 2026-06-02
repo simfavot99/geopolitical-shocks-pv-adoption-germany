@@ -6,7 +6,7 @@ A Shiny app for exploring how the 2026 Iran war affected solar-PV adoption acros
 
 ## 1. Controls
 
-<img src="images/paste-1.png" width="600"/>
+<p align="center"><img src="images/paste-1.png" width="600"/></p>
 
 At the top you have the controls. Here is what each one does:
 
@@ -24,7 +24,7 @@ At the top you have the controls. Here is what each one does:
 
 ## 2. Map
 
-<img src="images/paste-2.png" width="600"/>
+<p align="center"><img src="images/paste-2.png" width="600"/></p>
 
 A choropleth map of the 16 federal states, colored by the **Map outcome** you selected. Click any state to update the right-side charts. The map opens with **Baden-Württemberg** selected by default.
 
@@ -34,7 +34,7 @@ Hover a state to see its exact value. Empty values appear in grey ("no data").
 
 ## 3. Plots
 
-<img src="images/paste-3.png" width="600"/>
+<p align="center"><img src="images/paste-3.png" width="600"/></p>
 
 Two stacked charts for the selected state:
 
