@@ -157,16 +157,17 @@ C3 <- data.frame(
     "Thuringia", "Hamburg", "Berlin", "Bremen"
   ),
   FederalStateCode = c(
-    "DEA", "DE1", "DE4", "DE2",
-    "DEC", "DE9", "DEB", "DEM",
-    "DEE", "DEF", "DED", "DE7",
-    "DEG", "DE6", "DE3", "DE5"
+    "05", "08", "12", "09",
+    "10", "03", "07", "13",
+    "15", "01", "14", "06",
+    "16", "02", "11", "04"
   )
 )
 
 # district code from map (no geometry needed)
-districts_map <- st_read_parquet(here("ignore/3. data/2. maps/districts.parquet")) |>
+districts_map <- st_read_parquet(here("N/1. maps/2.3. all layers/3. final dataset/1. spatial datasets/3. districts/dist_2023.parquet")) |>
   st_drop_geometry() |>
+  rename(AGS = DistrictCode, DistrictCode = NUTS) |>
   select(District, DistrictCode)
 
 # Step 4: join lookups
@@ -266,10 +267,6 @@ pop.federal_state <- gen_table(
   endyear   = 2023
 )
 
-federal_state.codes <- tibble::tibble(
-  code = c("01","02","03","04","05","06","07","08","09","10","11","12","13","14","15","16"),
-  nuts = c("DEF","DE6","DE9","DE5","DEA","DE7","DEB","DE1","DE2","DEC","DE3","DE4","DEM","DED","DEE","DEG")
-)
 
 pop.federal_state.2023 <- pop.federal_state |>
   select(
@@ -283,8 +280,7 @@ pop.federal_state.2023 <- pop.federal_state |>
     population = suppressWarnings(as.numeric(population))
   ) |>
   select(-year) |>
-  left_join(federal_state.codes, by = "code") |>
-  select(FederalState.names = name, FederalStateCode = nuts, date, population) |>
+  select(FederalState.names = name, FederalStateCode = code, date, population) |>
   arrange(FederalStateCode, date)
 ```
 
@@ -305,7 +301,7 @@ state_day <- state_day |>
 **Step 5 — Save** the daily dataset next to the Shiny app:
 
 ```{r}
-out_dir <- here("8. shiny app", "8.1. shiny apps", "4")
+out_dir <- here("N", "2. shiny apps", "1")
 
 write_parquet(state_day, file.path(out_dir, "state_day.parquet"))
 ```
@@ -313,7 +309,7 @@ write_parquet(state_day, file.path(out_dir, "state_day.parquet"))
 **Load** (use this to reopen the saved dataset later without re-running the pipeline):
 
 ```{r}
-out_dir <- here("8. shiny app", "8.1. shiny apps", "4")
+out_dir <- here("N", "2. shiny apps", "1")
 
 state_day <- read_parquet(file.path(out_dir, "state_day.parquet"))
 ```

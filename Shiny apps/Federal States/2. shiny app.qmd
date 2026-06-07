@@ -25,14 +25,10 @@ Shiny app:
 # ============================================================================
 
 # ---- 0. data ---------------------------------------------------------------
-base_dir <- here("8. shiny app", "8.1. shiny apps", "4")
+base_dir <- here("N", "2. shiny apps", "1")
 
-fs_sf <- st_read_parquet(file.path(base_dir, "federalState.parquet")) |>
-  rename(FederalState.names = FederalState) |>
-  st_zm(drop = TRUE) |>
-  st_transform(4326) |>
-  st_make_valid()
-fs_sf <- fs_sf[!st_is_empty(fs_sf), ]
+fs_sf <- st_read_parquet(here("N", "1. maps", "2.3. all layers", "3. final dataset", "1. spatial datasets", "2. federal states", "state_2023.parquet")) |>
+  rename(FederalState.names = State, FederalStateCode = StateCode, geometry = geom)
 
 state_day <- read_parquet(file.path(base_dir, "state_day.parquet")) |>
   mutate(date.registration.day = as.Date(date.registration.day),
